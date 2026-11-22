@@ -37,6 +37,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-7mfnf](ranger-base-7mfnf.md) — The re-plant hazard cannot reach a `#!` script, so 361 call sites are not exposed (ranger-base-7mfnf) — 2026-11-22
 - [ranger-base-5k7vf](ranger-base-5k7vf.md) — A seat whose wall-watch AND bwrap are both gone has no lifetime bound, so the watch tick kills it (ranger-base-5k7vf) — 2026-11-22
 - [ranger-base-2unmh](ranger-base-2unmh.md) — Four closes verified, and four arms nothing witnessed (ranger-base-2unmh) — 2026-11-22
+- [ranger-base-2q0uy](ranger-base-2q0uy.md) — The host staging-root write is the stand-down shape's, not a fixture's, and no fixture root closes it (ranger-base-2q0uy) — 2026-11-22
 - [ranger-base-1aayx](ranger-base-1aayx.md) — The fourteen macos arm-1 reds were twelve landings and one fixture root (ranger-base-1aayx) — 2026-11-22
 - [ranger-base-zm03j](ranger-base-zm03j.md) — Verifying four closes, and the platform half nothing read (ranger-base-zm03j) — 2026-11-21
 - [ranger-base-zcj0z](ranger-base-zcj0z.md) — Arm 1 ran no Go test on either platform for nine days, and both reasons were loud (ranger-base-zcj0z) — 2026-11-21
