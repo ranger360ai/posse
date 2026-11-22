@@ -346,6 +346,42 @@ const vulnPrivateDiffHeader = "diff --git "
 // that render a hook — `posse gates install-hooks` and a session create,
 // hookfresh.go — render it from the binary that is running.
 //
+// AND A THIRD SKEW IS WHAT SENDS A SEAT TO THIS FILE AT ALL: the BINARY
+// against the TREE, rather than the hook against the binary
+// (ranger-base-wiklv). Both orders above are hook-vs-binary, and neither
+// explains what a seat sees. A hook is rendered FROM the posse on PATH at
+// every session create, so those two agree and the hook wall reads green —
+// while that binary can be any number of landed commits behind main, and in
+// this arm the binary IS the judge. So the refusal a seat reads and the fix
+// a seat reads here can both be current and still disagree, with nothing on
+// screen to break the tie. MEASURED 2026-11-22, this fix landed and the
+// bead's own repro fed to the posse on PATH: still refused, because that
+// install was 0.5.3+00601dfe, built 2026-11-21 06:26, 150 commits behind
+// main. ranger-base-cso5z is what that costs — the same bug re-filed three
+// hours after the fix landed, closed with no code change.
+//
+// THE TIE-BREAKER IS NOT IN THIS FILE and is not to be re-derived from it:
+// `posse gates <persona>` counts the landed commits the judging binary is
+// missing and breaks them out by what they judge. MEASURED 2026-11-22 from
+// the seat whose repro had just red: its "judging a commit-time gate" row
+// named bfc068fa, eb3f34fc and e3a389ac — this fix and its two corrections,
+// nothing else — and printed the remedy, `make install`, which is an
+// operator's hand and no seat's. That is the reading every commit-guard
+// refusal already ends by pointing at (gates.go, hookJudgeFunc, from
+// ranger-base-li3up, whose cost was this same arm), so read it BEFORE
+// reproducing $posse_added by hand. A freshness DOOR that refuses instead
+// was priced and declined (ranger-base-v81vo §4): it would red every seat
+// for the whole gap between a landing and an install, over a condition no
+// seat can fix.
+//
+// ranger-base-wiklv ITSELF WAS NOT THAT SKEW, and the distinction is the
+// reason this file keeps both paragraphs. It was filed 2026-11-21 01:28,
+// 55 minutes after ranger-base-4og5l (00:33) and 6h49m before that fix
+// landed (08:17) — two seats finding one bug in the same hour from
+// different work, which no reading of any binary would have prevented. It
+// asked for one thing those rows did not already cover, the symmetric
+// escape across the boundary, and ranger-base-cso5z pinned that meanwhile.
+//
 // AND THE BOUNDARY IS EXACT, MEASURED 2026-11-21 over the whole tracked tree
 // (2,115 files, 688,033 added lines, every bd id in them read as an open
 // vuln-private id): with the headers, judging the tree as ONE staged diff

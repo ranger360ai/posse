@@ -1020,6 +1020,17 @@ func vpFile(path string, added ...string) string {
 // invent one. The last three rows are that false-negative arm and their
 // comment carries the measurement; the answer is no, structurally, because
 // blanking a boundary only ever closes a unit.
+//
+// IT GREW NOTHING FOR ranger-base-wiklv, which asked for exactly what the
+// two halves above already hold: its repro is rows 1 and 2, and the
+// direction it called symmetric is cso5z's row. It was filed 55 minutes
+// after ranger-base-4og5l and 6h49m before that fix landed — concurrent
+// discovery of one bug, not a gap in this table — and dispatched a day
+// later, by which time the only thing still reproducing it was the posse on
+// PATH. So before adding a row for a shape this judge reds in front of you,
+// read `posse gates <persona>` for which binary is judging;
+// vulnprivate.go's vulnPrivateUndiff carries that measurement and why no
+// door takes it.
 func TestRunGatesVulnPrivateScanClosesEveryUnitAtAFileBoundary(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
