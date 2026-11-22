@@ -73,7 +73,10 @@ func (a *App) EnsureCageSpool(persona, session string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return "", err
 	}
-	f, err := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	// Through no link, and only a regular single-link file (openRefusalLeaf,
+	// ranger-base-legou): this runs uncaged, and CageMounts then binds
+	// whatever is at this name rw into the container.
+	f, err := openRefusalLeaf(p, os.O_APPEND|os.O_WRONLY, true)
 	if err != nil {
 		return "", err
 	}
@@ -144,7 +147,11 @@ func sha256Hex(b []byte) string {
 // it touches without checking first, and a second call over an unchanged
 // spool appends zero lines (verification 3).
 func (a *App) FoldRefusalsSpool(persona, session string) error {
-	content, err := os.ReadFile(a.CageSpoolPath(persona, session))
+	// readRefusalLeaf, not os.ReadFile: a spool replaced by a link would
+	// copy the link target's bytes into the canonical log
+	// (ranger-base-legou). A refused spool is an error and the cursor stays
+	// where it was.
+	content, err := readRefusalLeaf(a.CageSpoolPath(persona, session))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -219,7 +226,7 @@ func lastCompleteLine(content []byte, from int64) int64 {
 // caged persona could append one overlong line and every complete line
 // AFTER it was dropped — silently, since the scanner's error was ignored,
 // and permanently, since the cursor advanced past the whole chunk anyway.
-// There is no cap here: the chunk is already whole in memory (os.ReadFile
+// There is no cap here: the chunk is already whole in memory (readRefusalLeaf
 // in FoldRefusalsSpool), so carrying a long line verbatim costs the fold
 // nothing a shorter one did not, and a line the persona wrote is exactly
 // what the audit trail is for. The bytes go over unaltered — no \r
@@ -245,15 +252,14 @@ func foldedLines(chunk []byte, session string) string {
 
 // appendCanonicalRefusal appends to gates/<persona>/refusals.log — the same
 // file the host's own L1 shims and the egress proxy append to, and the
-// fold's only way of reaching it. RefusalsLog creates the file first: on a
+// fold's only way of reaching it. The open creates the file if absent: on a
 // persona whose first-ever refusal is this fold's tamper line, there may be
-// nothing there yet.
+// nothing there yet. It is ONE open, through no link, judged on the fd
+// (openCanonicalRefusals, ranger-base-legou) — the lines appended here are
+// partly seat-authored, so a canonical log linked elsewhere must refuse the
+// fold, and the caller then leaves the cursor where it was.
 func (a *App) appendCanonicalRefusal(persona, s string) error {
-	path, err := a.RefusalsLog(persona)
-	if err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	f, _, err := a.openCanonicalRefusals(persona)
 	if err != nil {
 		return err
 	}

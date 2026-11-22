@@ -173,17 +173,32 @@ func (a *App) EgressHostsFile(persona, session string) string {
 // here if it does not exist: the engine bind-mounts the file itself (not
 // the gates dir, which holds the shims and has no business inside a
 // proxy), and a bind mount of a missing file makes a directory.
+//
+// The leaf is opened through no link and accepted only as a regular file
+// with one link (openRefusalLeaf, ranger-base-legou): anything else fails
+// the call, and with it RenderEgress and the launch, because the proxy
+// would otherwise be handed a mount of whatever the link names.
 func (a *App) RefusalsLog(persona string) (string, error) {
-	dir := a.GatesDir(persona)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	p := filepath.Join(dir, "refusals.log")
-	f, err := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	f, p, err := a.openCanonicalRefusals(persona)
 	if err != nil {
 		return "", err
 	}
 	return p, f.Close()
+}
+
+// openCanonicalRefusals creates gates/<persona>/refusals.log if absent and
+// opens it for append, judged by openRefusalLeaf.
+func (a *App) openCanonicalRefusals(persona string) (*os.File, string, error) {
+	dir := a.GatesDir(persona)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, "", err
+	}
+	p := filepath.Join(dir, "refusals.log")
+	f, err := openRefusalLeaf(p, os.O_APPEND|os.O_WRONLY, true)
+	if err != nil {
+		return nil, "", err
+	}
+	return f, p, nil
 }
 
 // RenderEgress writes the proxy script and the session's allowlist and
