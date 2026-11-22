@@ -89,6 +89,72 @@ func TestQAGatesReportPrintsThisPersonasWallWatchVerdicts(t *testing.T) {
 	}
 }
 
+// ── the head over them (ranger-base-oe884) ───────────────────────────────
+//
+// That head said "a seat of this persona was KILLED for a wall that came
+// off" over every verdict on disk, whatever each one said — so over the one
+// verdict whose body says the kill could NOT be confirmed it asserted the
+// opposite of the lines printed under it, and cost its reader the one action
+// that body asks for: go and end that seat by hand.
+//
+// Both arms are through the binary beside the two above, and both plant the
+// file: the heads the reader counts by are pinned to the writer's own
+// constants in internal/posse (TestWallWatchVerdictsSay… rows, a round trip
+// through a tick that really detached), and what is in question here is the
+// line `posse gates` puts over a file already on disk.
+
+const wwvNotConfirmedText = "── posse wall-watch verdict · 2026-11-15T09:00:00Z · seat builder · dir /w/builder · bwrap pid 10 · seat pid 11\n" +
+	"could NOT confirm the kill of seat builder: the wall over /h/.claude/settings.json came off at 2026-11-15T09:00:00Z (ranger-base-0qpsw D2)\n" +
+	"killed: NOT CONFIRMED — processes in the seat's mount namespace were still alive after 20 rounds of SIGKILL: [11]\n"
+
+// wwvHead is the one line the report puts over this persona's verdicts.
+func wwvHead(t *testing.T, out string) string {
+	t.Helper()
+	for _, ln := range strings.Split(out, "\n") {
+		if strings.Contains(ln, "wall-watch: ") {
+			return ln
+		}
+	}
+	t.Fatalf("the report has no wall-watch line:\n%s", out)
+	return ""
+}
+
+func TestQAGatesReportDoesNotSayKilledOverAKillThatDidNotConfirm(t *testing.T) {
+	bin := buildRhq(t)
+	rhq := grwHome(t)
+	launchHome := t.TempDir()
+	wwvPlant(t, rhq, "builder", "4411", wwvNotConfirmedText)
+
+	got, code := grwRun(t, bin, rhq, launchHome)
+	if code != 0 {
+		t.Errorf("a verdict on disk changed `posse gates`'s exit to %d:\n%s", code, got)
+	}
+	head := wwvHead(t, got)
+	for _, want := range []string{"1 verdict(s)", "could NOT be confirmed", "may still be RUNNING", "end it by hand"} {
+		if !strings.Contains(head, want) {
+			t.Errorf("the head does not say %q:\n%s", want, head)
+		}
+	}
+	if strings.Contains(head, "KILLED") {
+		t.Errorf("the head reports as KILLED a seat whose kill did not confirm:\n%s", head)
+	}
+	// The body is printed whole, as it always was.
+	if !strings.Contains(got, "NOT CONFIRMED — processes in the seat's mount namespace") {
+		t.Errorf("the report does not carry the verdict's own lines:\n%s", got)
+	}
+
+	// One of each: the two readings counted apart in the same line, so
+	// neither is reported as the other.
+	wwvPlant(t, rhq, "builder", "4412", wwvText)
+	got, _ = grwRun(t, bin, rhq, launchHome)
+	head = wwvHead(t, got)
+	for _, want := range []string{"2 verdict(s)", "1 report a seat KILLED for a wall that came off", "1 could NOT confirm the kill"} {
+		if !strings.Contains(head, want) {
+			t.Errorf("the head over one of each does not say %q:\n%s", want, head)
+		}
+	}
+}
+
 // `posse peek` is the command an operator types at a seat that has gone,
 // and a killed seat has no pane: before this, "no such session" was all it
 // said over a verdict sitting on disk.

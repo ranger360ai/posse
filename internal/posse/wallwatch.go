@@ -702,11 +702,21 @@ func wallWatchPidList(ps []int) string {
 // KILLED regardless, so the one P1 that most needs a human to end a seat by
 // hand told them, at a glance, that it was already ended. A kill that found
 // nothing left is still a seat that is over, and reads as killed.
+//
+// The two heads are constants because a READER of a verdict file matches on
+// them (WallWatchVerdictsSay, ranger-base-oe884) — one spelling for the
+// writer and the reader, so a renamed head cannot leave the reader quietly
+// finding nothing.
+const (
+	wallWatchKilledHead       = "KILLED seat "
+	wallWatchNotConfirmedHead = "could NOT confirm the kill of seat "
+)
+
 func wallWatchKillHead(d wallWatchDetach) string {
 	if d.KillErr != "" {
-		return "could NOT confirm the kill of seat " + d.Seat
+		return wallWatchNotConfirmedHead + d.Seat
 	}
-	return "KILLED seat " + d.Seat
+	return wallWatchKilledHead + d.Seat
 }
 
 func wallWatchKillSentence(d wallWatchDetach, who string) string {
@@ -1246,11 +1256,82 @@ func readWallWatchVerdicts(stateDir, seat string) []WallWatchVerdict {
 	return out
 }
 
+// ── What a reader may assert over a verdict it did not write ──────────────
+//
+// A verdict file is prose for the human who comes to a seat after its pane
+// is gone, and the two readers of it — `posse gates <persona>` and `posse
+// peek` — put ONE line over a persona's whole set. That line said "a seat
+// of this persona was KILLED for a wall that came off" over every verdict
+// on disk, whatever each one said (ranger-base-oe884). Since
+// ranger-base-6r6ox a kill that did not confirm opens its line with "could
+// NOT confirm the kill of seat X", so the summary asserted the opposite of
+// the body it was summarizing — on the one reading whose whole point is
+// that a human has to go and end that seat by hand. A verdict that reports
+// a REFUSAL (ranger-base-r9slg) names no kill at all and was reported as a
+// kill too, as is one that is on disk and could not be read.
+//
+// So the summary counts what each text SAYS and asserts nothing else. The
+// key is the writer's own head string (wallWatchKillHead's two constants),
+// and the pin is a round trip through a tick that really detached rather
+// than a hand-written fixture: a head the reader no longer finds reds it.
+
+// wallWatchVerdictSays is what one verdict's text reports. Both can be true:
+// appendWallWatchVerdict appends, so one file holds every block its
+// watcher wrote — a refusal and then a detach, or two detections.
+func wallWatchVerdictSays(text string) (killed, notConfirmed bool) {
+	return strings.Contains(text, wallWatchKilledHead), strings.Contains(text, wallWatchNotConfirmedHead)
+}
+
+// WallWatchVerdictsSay is the clause a reader may put over a set of
+// verdicts: what their text says became of the seats, the three readings
+// counted apart. "" for an empty set — each caller has its own line for
+// the nothing-on-disk case, and they do not read alike.
+func WallWatchVerdictsSay(vs []WallWatchVerdict) string {
+	var killed, notConfirmed, noKill int
+	for _, v := range vs {
+		k, nc := wallWatchVerdictSays(v.Text)
+		switch {
+		case nc:
+			// The louder reading wins a file that holds both: a seat that
+			// may still be running is what the reader has to act on.
+			notConfirmed++
+		case k:
+			killed++
+		default:
+			noKill++
+		}
+	}
+	// One reading over the whole set reads as a sentence; more than one is
+	// counted, because the counts are the whole of what a reader needs.
+	switch {
+	case len(vs) == 0:
+		return ""
+	case killed == len(vs):
+		return "a seat was KILLED for a wall that came off (ranger-base-0qpsw D2)"
+	case notConfirmed == len(vs):
+		return "a wall came off and the kill of the seat could NOT be confirmed (ranger-base-0qpsw D2) — it may still be RUNNING, so end it by hand"
+	case noKill == len(vs):
+		return "no kill is reported — a watcher that refused to start its seat (ranger-base-r9slg), or a verdict that could not be read"
+	}
+	var says []string
+	if killed > 0 {
+		says = append(says, fmt.Sprintf("%d report a seat KILLED for a wall that came off (ranger-base-0qpsw D2)", killed))
+	}
+	if notConfirmed > 0 {
+		says = append(says, fmt.Sprintf("%d could NOT confirm the kill, so that seat may still be RUNNING — end it by hand", notConfirmed))
+	}
+	if noKill > 0 {
+		says = append(says, fmt.Sprintf("%d report no kill at all (a watcher that refused to start its seat, or a verdict that could not be read)", noKill))
+	}
+	return strings.Join(says, "; ")
+}
+
 // WallWatchVerdictNotice is what `posse peek` adds when the pane it was
-// asked to read is not there. A seat whose wall came off was KILLED, and
-// its pane closed with the watcher — so "no such session" and "block
-// target not found" are both what an operator sees when the reason is on
-// disk and nowhere else. "" when there is no verdict.
+// asked to read is not there. A seat whose wall came off was killed — or
+// the kill was tried and not confirmed — and its pane closed with the
+// watcher, so "no such session" and "block target not found" are both what
+// an operator sees when the reason is on disk and nowhere else. "" when
+// there is no verdict.
 //
 // With a persona it prints the newest verdict in full; with none it prints
 // the count and the path and nothing more, because peek is also what an
@@ -1263,12 +1344,12 @@ func (a *App) WallWatchVerdictNotice(seat string) string {
 	}
 	last := vs[len(vs)-1]
 	if seat == "" {
-		return fmt.Sprintf("posse wall-watch has %d verdict(s) on disk. A seat whose wall came off is KILLED and its pane closes with it, so the reason is in those files and in no scrollback (ranger-base-pfcci) — newest %s; `posse gates <persona>` prints a persona's in full.",
-			len(vs), AbbrevHome(last.Path))
+		return fmt.Sprintf("posse wall-watch has %d verdict(s) on disk — %s. The pane closes with the watcher, so the reason is in those files and in no scrollback (ranger-base-pfcci) — newest %s; `posse gates <persona>` prints a persona's in full.",
+			len(vs), WallWatchVerdictsSay(vs), AbbrevHome(last.Path))
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "posse wall-watch has %d verdict(s) on disk for %s. A seat whose wall came off is KILLED and its pane closes with it, so this is the reason and there is no scrollback left to read (ranger-base-pfcci). The most recent, %s:",
-		len(vs), seat, AbbrevHome(last.Path))
+	fmt.Fprintf(&b, "posse wall-watch has %d verdict(s) on disk for %s — %s. The pane closes with the watcher, so this is the reason and there is no scrollback left to read (ranger-base-pfcci). The most recent, %s:",
+		len(vs), seat, WallWatchVerdictsSay(vs), AbbrevHome(last.Path))
 	for _, ln := range strings.Split(last.Text, "\n") {
 		b.WriteString("\n  " + ln)
 	}

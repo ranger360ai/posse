@@ -2358,7 +2358,12 @@ func main() {
 		// that HAPPENED is history, and this command's exit says whether
 		// the persona is cleared to dispatch now.
 		if vs := a.WallWatchVerdicts(ag.Name); len(vs) > 0 {
-			fmt.Fprintf(out, "  wall-watch: %d verdict(s) — a seat of this persona was KILLED for a wall that came off (ranger-base-0qpsw D2), and the pane that printed this is gone:\n", len(vs))
+			// The head says what the verdicts SAY and not what the
+			// commonest one of them says (ranger-base-oe884): a kill that
+			// did not confirm is a seat that may still be running, and
+			// summarizing it as KILLED is the one reading that costs a
+			// human the action the body asks them for.
+			fmt.Fprintf(out, "  wall-watch: %d verdict(s) for this persona — %s. The pane that printed each of them is gone:\n", len(vs), posse.WallWatchVerdictsSay(vs))
 			for _, v := range vs {
 				fmt.Fprintf(out, "    %s\n", posse.AbbrevHome(v.Path))
 				for _, ln := range strings.Split(v.Text, "\n") {

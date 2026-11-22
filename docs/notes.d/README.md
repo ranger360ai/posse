@@ -16,6 +16,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-shf97](ranger-base-shf97.md) — ranger-base-shf97 — the two arms, and the rule that was not taken — 2026-11-22
 - [ranger-base-qei5l](ranger-base-qei5l.md) — ranger-base-qei5l — verifying four closes: what the mutants said — 2026-11-22
 - [ranger-base-og2zi](ranger-base-og2zi.md) — Suite slots: a bounded queue, and a holder named by the kernel (ranger-base-og2zi) — 2026-11-22
+- [ranger-base-oe884](ranger-base-oe884.md) — The one line over a set of verdicts says what they say (ranger-base-oe884) — 2026-11-22
 - [ranger-base-njj5z](ranger-base-njj5z.md) — A read deadline is a poller fact, and a FIFO is not pollable on darwin (ranger-base-njj5z) — 2026-11-22
 - [ranger-base-mlw6q](ranger-base-mlw6q.md) — ranger-base-mlw6q — the wallWitness home, and the two layers under it — 2026-11-22
 - [ranger-base-mhl7h](ranger-base-mhl7h.md) — ranger-base-mhl7h — a deadline branch that kills a nil Process reports nothing at all — 2026-11-22

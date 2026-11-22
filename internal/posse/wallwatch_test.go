@@ -1631,6 +1631,159 @@ func TestWallWatchVerdictNoticeNamesWhereTheReasonWent(t *testing.T) {
 	}
 }
 
+// ── the one line a reader puts over a set of verdicts (ranger-base-oe884) ──
+//
+// `posse gates <persona>` and `posse peek` each summarize a persona's whole
+// set in one line, and that line said "a seat ... was KILLED for a wall that
+// came off" over every verdict on disk — including one whose body says the
+// kill could NOT be confirmed, which is the reading whose whole point is
+// that a human must go and end that seat by hand.
+//
+// These rows are the ROUND TRIP, not a hand-written fixture: a tick that
+// really detached writes the file, readWallWatchVerdicts reads it back, and
+// WallWatchVerdictsSay says what it found. The reader matches on the
+// writer's own head constants, so a renamed head reds here too and does not
+// just leave the reader quietly finding nothing.
+
+// wwVerdictPathFor is where a persona's watcher of that pid leaves its
+// verdict under a state dir — composed the way the watcher composes it.
+func wwVerdictPathFor(state, persona, pid string) string {
+	return wallWatchVerdictPath(filepath.Join(wallWatchRecordDir(filepath.Join(state, "gates", persona, "bwrap.mounts")), pid+".json"))
+}
+
+// wwRefuse is a verdict as `posse wall-watch`'s refuse() leaves one: a
+// refusal header and one line, and no kill reported at all
+// (ranger-base-r9slg).
+func wwRefuse(t *testing.T, path string) {
+	t.Helper()
+	if err := appendWallWatchVerdict(path, wallWatchRefusedVerdictHeader("developer", "/w/d", 100, 0, 0, time.Now())); err != nil {
+		t.Fatal(err)
+	}
+	if err := appendWallWatchVerdict(path, "cannot read the walls to hold this seat to (open /g/bwrap.mounts: no such file or directory) — refusing to start the seat unwatched (ranger-base-0qpsw D1)"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWallWatchVerdictsSayCountsAnUnconfirmedKillApartFromAKill(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name    string
+		probe   *fakeWallWatchProbe
+		want    []string
+		wantNot []string
+	}{
+		{"a confirmed kill", &fakeWallWatchProbe{pids: []int{102, 103}, table: mountTable{"/h/.claude/shell-snapshots": {"41"}}},
+			[]string{"a seat was KILLED for a wall that came off (ranger-base-0qpsw D2)"},
+			[]string{"NOT", "RUNNING", "by hand"}},
+		{"a kill that did not confirm", &fakeWallWatchProbe{pids: []int{102, 103}, table: mountTable{"/h/.claude/shell-snapshots": {"41"}}, killErr: wwKillErr},
+			[]string{"could NOT be confirmed", "may still be RUNNING", "end it by hand"},
+			[]string{"KILLED"}},
+		// A kill that found the seat already over is a seat that is over.
+		{"a kill that found nothing left", &fakeWallWatchProbe{pids: []int{102}, table: mountTable{"/h/.claude/shell-snapshots": {"41"}}, killNothing: true},
+			[]string{"a seat was KILLED for a wall that came off (ranger-base-0qpsw D2)"},
+			[]string{"NOT", "RUNNING"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			state, _, _ := wwBackstopRecord(t)
+			lines := wallWatchBackstop(state, &fakeWallWatchStore{}, "", time.Now, c.probe)
+			vs := readWallWatchVerdicts(state, "developer")
+			if len(vs) != 1 {
+				t.Fatalf("%d verdicts, want 1 (tick said %q)", len(vs), lines)
+			}
+			got := WallWatchVerdictsSay(vs)
+			for _, w := range c.want {
+				if !strings.Contains(got, w) {
+					t.Errorf("the summary of %s does not say %q:\n%s\nover the verdict:\n%s", c.name, w, got, vs[0].Text)
+				}
+			}
+			for _, w := range c.wantNot {
+				if strings.Contains(got, w) {
+					t.Errorf("the summary of %s says %q:\n%s", c.name, w, got)
+				}
+			}
+		})
+	}
+}
+
+// A refusal is in the same file as a detach and reports no kill: nine of the
+// watcher's lines end the seat before it runs, or run it where nobody can
+// see it, and none of them is a wall that came off.
+func TestWallWatchVerdictsSayClaimsNoKillOverARefusal(t *testing.T) {
+	t.Parallel()
+	state := t.TempDir()
+	wwRefuse(t, wwVerdictPathFor(state, "developer", "100"))
+	got := WallWatchVerdictsSay(readWallWatchVerdicts(state, "developer"))
+	if !strings.Contains(got, "no kill is reported") || !strings.Contains(got, "refused to start its seat") {
+		t.Errorf("the summary of a refusal = %q, want it to claim no kill", got)
+	}
+	if strings.Contains(got, "KILLED") {
+		t.Errorf("the summary reports a refused seat as KILLED: %q", got)
+	}
+}
+
+// A persona with one of each: three counts, kept apart, in one line.
+func TestWallWatchVerdictsSayCountsAMixedSetApart(t *testing.T) {
+	t.Parallel()
+	state, _, _ := wwBackstopRecord(t)
+	p := &fakeWallWatchProbe{pids: []int{102, 103}, table: mountTable{"/h/.claude/shell-snapshots": {"41"}}, killErr: wwKillErr}
+	wallWatchBackstop(state, &fakeWallWatchStore{}, "", time.Now, p)
+	d := wallWatchDetach{Seat: "developer", Dir: "/w/d", BwrapPid: 10, SeatPid: 11, Killed: []int{11}}
+	wwSay(t, wwVerdictPathFor(state, "developer", "200"), d, wallWatchKillHead(d)+": the wall over /x came off")
+	wwRefuse(t, wwVerdictPathFor(state, "developer", "300"))
+
+	vs := readWallWatchVerdicts(state, "developer")
+	if len(vs) != 3 {
+		t.Fatalf("%d verdicts, want 3", len(vs))
+	}
+	got := WallWatchVerdictsSay(vs)
+	for _, w := range []string{"1 report a seat KILLED for a wall that came off", "1 could NOT confirm the kill, so that seat may still be RUNNING", "1 report no kill at all"} {
+		if !strings.Contains(got, w) {
+			t.Errorf("the summary of three readings does not say %q:\n%s", w, got)
+		}
+	}
+}
+
+// The counting itself, over the readings a tick cannot write: a verdict that
+// is on disk and could not be read says nothing about a kill, and a file
+// that holds BOTH readings takes the louder one — a seat that may still be
+// running is what its reader has to act on.
+func TestWallWatchVerdictsSayOverReadingsNoTickWrites(t *testing.T) {
+	t.Parallel()
+	if got := WallWatchVerdictsSay(nil); got != "" {
+		t.Errorf("the summary of no verdict = %q, want empty", got)
+	}
+	unread := []WallWatchVerdict{{Text: "⚠ this verdict is on disk and could not be read: permission denied"}}
+	if got := WallWatchVerdictsSay(unread); !strings.Contains(got, "could not be read") || strings.Contains(got, "KILLED") {
+		t.Errorf("the summary of an unreadable verdict = %q, want no kill claimed", got)
+	}
+	both := []WallWatchVerdict{{Text: "KILLED seat a: the wall over /x came off\ncould NOT confirm the kill of seat a — the wall over /y came off"}}
+	if got := WallWatchVerdictsSay(both); !strings.Contains(got, "may still be RUNNING") || strings.Contains(got, "KILLED") {
+		t.Errorf("the summary of a file holding both readings = %q, want the unconfirmed one", got)
+	}
+}
+
+// peek's notice is the other reader of the same set.
+func TestWallWatchVerdictNoticeDoesNotSayKilledOverAnUnconfirmedKill(t *testing.T) {
+	t.Parallel()
+	state := t.TempDir()
+	a := &App{StateDir: state}
+	d := wallWatchDetach{Seat: "developer", Dir: "/w/d", BwrapPid: 10, SeatPid: 11, Killed: []int{11}, KillErr: wwKillErr}
+	wwSay(t, wwVerdictPathFor(state, "developer", "100"), d,
+		wallWatchKillHead(d)+": the wall over /x came off", "killed: "+wallWatchKilled(d))
+	for _, seat := range []string{"", "developer"} {
+		n := a.WallWatchVerdictNotice(seat)
+		if !strings.Contains(n, "may still be RUNNING") || !strings.Contains(n, "end it by hand") {
+			t.Errorf("peek's notice for seat %q does not say the seat may still be running:\n%s", seat, n)
+		}
+		if strings.Contains(n, "KILLED") {
+			t.Errorf("peek's notice for seat %q reports as KILLED a seat whose kill did not confirm:\n%s", seat, n)
+		}
+		if !strings.Contains(n, "1 verdict(s)") {
+			t.Errorf("peek's notice for seat %q lost its count:\n%s", seat, n)
+		}
+	}
+}
+
 // TestWallWatchVerdictLineReachesTheFileBeforeThePane is the ORDER inside
 // say() (ranger-base-r9slg, escaped from ranger-base-pfcci). MEASURED
 // 2026-11-15 at 4b3013cd: moving `v.Pane(line)` above `v.note(line)` left
