@@ -1258,6 +1258,128 @@ func TestWallWatchBackstopClearsTheRetryMarkUnderALiveWatcher(t *testing.T) {
 	}
 }
 
+// ── WHICH beads the retry mark carries, and what it says with none
+//    (ranger-base-repzh, verifying ranger-base-kzk3u) ──────────────────────
+//
+// kzk3u's four rows above all reach the mark through a FILED bead: the
+// detach arm's fixture files one, and so does the orphan arm's. Three arms of
+// the same mechanism were therefore driven by nothing, MEASURED 2026-11-22 on
+// d3957c06 and again on main d5527330 by mutating each alone and grading the
+// whole wallwatch family (73 tests, all green under each):
+//
+//   wallwatch.go  the detach arm's `beads := commented` narrowed to the FILED
+//                 id alone                                        SURVIVED
+//   wallwatch.go  the retry's "no bead holds the kill" line deleted
+//                                                                 SURVIVED
+//   wallwatch.go  the failed retry's record re-write deleted       SURVIVED
+//
+// The first is the one that matters: a detach inside wallWatchDedupe of
+// another seat's files NOTHING and comments on the open bead instead, so
+// `filed` is empty and `commented` is the whole of what holds the kill. Drop
+// it and a seat whose kill did not confirm is marked with no bead at all —
+// which is the state kzk3u was filed to end, one arm over, with the verdict
+// file as the only trace.
+
+// wwRepzhOpenBeadFor is the open security bead fileWallWatchDetach finds
+// instead of filing, for a seat that lost the same path inside ten minutes:
+// the marker is what it keys on, and Created is what keeps it fresh.
+func wwRepzhOpenBeadFor(path string) BdIssue {
+	return BdIssue{
+		ID: "t-old", Title: "wall-watch: a wall came off", Priority: 1,
+		IssueType: "bug", Labels: []string{"security"}, Status: "open",
+		Created:     time.Now(),
+		Description: "an earlier seat lost it\n" + wallWatchMarker(path) + "\n",
+	}
+}
+
+// A detach that COMMENTS rather than files: the commented bead is what the
+// mark carries, and the retry that confirms tells that bead and no other.
+func TestWallWatchBackstopMarksACommentedBeadWhenNothingWasFiled(t *testing.T) {
+	t.Parallel()
+	state, path, _ := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{issues: []BdIssue{wwRepzhOpenBeadFor("/h/.claude/settings.json")}}
+	p := &fakeWallWatchProbe{pids: []int{102, 103}, table: mountTable{"/h/.claude/shell-snapshots": {"41"}}, killErr: wwKzkKillErr}
+
+	lines := wallWatchBackstop(state, st, "", time.Now, p)
+	if len(st.issues) != 1 {
+		t.Fatalf("%d beads, want the one that was already open (lines %q)", len(st.issues), lines)
+	}
+	r := wwKzkRecord(t, path)
+	if !reflect.DeepEqual(r.KillBeads, []string{"t-old"}) {
+		t.Fatalf("the kill was marked with %v, want the bead it was RECORDED on — with none, no later tick tells anything", r.KillBeads)
+	}
+	if cs := st.comments["t-old"]; len(cs) != 2 || !strings.Contains(cs[1], "retries the kill every tick") {
+		t.Fatalf("the commented bead was not told the tick is retrying: %q", cs)
+	}
+
+	// The retry confirms: the same bead is told the seat is over, and the
+	// record goes only once it has been.
+	p.killErr = ""
+	wallWatchBackstop(state, st, "", time.Now, p)
+	if cs := st.comments["t-old"]; len(cs) != 3 || !strings.Contains(cs[2], "is over") {
+		t.Errorf("the commented bead was not told the seat ended: %q", cs)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the record outlived the seat and the bead it told (%v)", err)
+	}
+}
+
+// A kill that did not confirm AND could not be filed: the mark carries no
+// bead, so the verdict file has to say that it is the only record. Nothing
+// may claim a bead holds it.
+func TestWallWatchBackstopSaysWhenNoBeadHoldsTheUnconfirmedKill(t *testing.T) {
+	t.Parallel()
+	state, path, _ := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{createErr: errors.New("bd is down")}
+	p := &fakeWallWatchProbe{pids: []int{102, 103}, table: wwIntact(), leaderPpid: 1, leaderRead: true, killErr: wwKzkKillErr}
+
+	wallWatchBackstop(state, st, "", time.Now, p)
+	if r := wwKzkRecord(t, path); r.KillPending == "" || len(r.KillBeads) != 0 {
+		t.Fatalf("record = %+v, want it marked for a retry with no bead", r)
+	}
+	p.killErr = ""
+	lines := wallWatchBackstop(state, st, "", time.Now, p)
+	vs := readWallWatchVerdicts(state, "developer")
+	if len(vs) != 1 {
+		t.Fatalf("%d verdicts, want 1 (lines %q)", len(vs), vs)
+	}
+	if !strings.Contains(vs[0].Text, "no bead holds the kill that did not confirm — this line is the record") {
+		t.Errorf("the verdict does not say it is the only record of the kill:\n%s", vs[0].Text)
+	}
+	if strings.Contains(vs[0].Text, "recorded on ") {
+		t.Errorf("the verdict claims a bead was told when none holds the kill:\n%s", vs[0].Text)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the record was kept with no bead left to tell (%v, lines %q)", err, lines)
+	}
+}
+
+// A retry that fails again re-writes the record, so the failure the eventual
+// verdict and comment name is the LATEST one and not the first. Without that
+// write the tick reports a reason that is two ticks stale.
+func TestWallWatchBackstopRetryRecordsItsLatestFailure(t *testing.T) {
+	t.Parallel()
+	state, path, _ := wwBackstopRecord(t)
+	st := &fakeWallWatchStore{}
+	p := &fakeWallWatchProbe{pids: []int{102, 103}, table: wwIntact(), leaderPpid: 1, leaderRead: true, killErr: wwKzkKillErr}
+	wallWatchBackstop(state, st, "", time.Now, p)
+
+	const second = "the seat's mount namespace could not be read: permission denied"
+	p.killErr = second
+	wallWatchBackstop(state, st, "", time.Now, p)
+	if r := wwKzkRecord(t, path); r.KillPending != second {
+		t.Fatalf("the record still names the FIRST failure (%q), so a later tick reports a stale reason", r.KillPending)
+	}
+
+	p.killErr, p.pids = "", nil
+	wallWatchBackstop(state, st, "", time.Now, p)
+	id := st.issues[0].ID
+	cs := st.comments[id]
+	if len(cs) != 2 || !strings.Contains(cs[1], second) {
+		t.Errorf("the bead is not told which failure was resolved: %q", cs)
+	}
+}
+
 // ── a kill that did not confirm, and one that found nothing (ranger-base-6r6ox)
 //
 // Until these rows, fakeWallWatchProbe.Kill returned every pid and an empty
