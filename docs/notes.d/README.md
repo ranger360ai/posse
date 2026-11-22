@@ -25,6 +25,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-jielm](ranger-base-jielm.md) — Two verify findings: a pin whose premise nothing witnessed, and the last unguarded read of the refusals leaf (ranger-base-jielm) — 2026-11-22
 - [ranger-base-jhmm7](ranger-base-jhmm7.md) — ranger-base-jhmm7 — the door under the bwrap fixture HOME — 2026-11-22
 - [ranger-base-hhps5](ranger-base-hhps5.md) — Two arms nothing witnessed, closed: a launch key that read one spelling, and a drop key with no fixture that could grade it (ranger-base-hhps5) — 2026-11-22
+- [ranger-base-g27p4](ranger-base-g27p4.md) — The same discard one layer up: a recipe's `command:` beside its `agent:` (ranger-base-g27p4) — 2026-11-22
 - [ranger-base-fuwuv](ranger-base-fuwuv.md) — The land check's cross product: every arm under both platforms, and what the two new steps cost (ranger-base-fuwuv) — 2026-11-22
 - [ranger-base-dv1ln](ranger-base-dv1ln.md) — The carve pins' prep splice position gets its witness (ranger-base-dv1ln) — 2026-11-22
 - [ranger-base-ddn56](ranger-base-ddn56.md) — ranger-base-ddn56 — two controls that shipped without a positive control — 2026-11-22

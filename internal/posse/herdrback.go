@@ -4875,6 +4875,13 @@ func (b *HerdrBackend) LaunchRecipe(w interface{ Write([]byte) (int, error) }, r
 	if err != nil {
 		return err
 	}
+	// Before anything on the host moves: the pair that names two launches
+	// when posse can open one (CheckRecipeCmdAgent, ranger-base-g27p4). Here
+	// and not in LoadRecipe, because `posse recipes` drops a recipe that
+	// errors and would list one carrying the pair nowhere at all.
+	if err := CheckRecipeCmdAgent(r); err != nil {
+		return err
+	}
 	if b.HasSession(r.Name) {
 		fmt.Fprintf(w, "session %s already exists — reusing it\n", r.Name)
 		return nil

@@ -3211,7 +3211,11 @@ sessions (herdr workspaces):
       --cage <shims|seatbelt|container>       wall tier (over the PID cage:); seatbelt = sandbox-exec file gate
   posse attach <name>            focus its workspace in herdr (alias: focus)
   posse up <name>                create-or-focus (alias: local)
-  posse recipe <name>            launch a saved recipe (<config home>/recipes)
+  posse recipe <name>            launch a saved recipe (<config home>/recipes). A recipe naming
+                                 agent: must leave command: null — the persona's line is rendered
+                                 from its PID and its runtime's template, so a hand-written one
+                                 would be discarded in silence and the pair is refused instead
+                                 (ADR 0002 §1)
   posse relaunch <name>          refresh a session in place: check the recreate
                                  first (a refusal here costs nothing), land the
                                  plane (one bounded turn to write lessons down

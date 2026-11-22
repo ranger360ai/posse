@@ -39,7 +39,9 @@ package posse
 // which is this same silent discard one layer up and a refusal in
 // different words — it names `command:` and `agent:`, not two flags, and
 // it would refuse a recipe that launches cleanly today. That arm is
-// ranger-base-g27p4, filed rather than taken here.
+// ranger-base-g27p4, and CheckRecipeCmdAgent below is it: asked at
+// LaunchRecipe, so between the two boundaries no NewSessionOpts carrying
+// both ever reaches planLaunch, and planLaunch still asks neither.
 func CheckCmdAgent(o NewSessionOpts) error {
 	if o.Cmd == "" || o.Agent == "" {
 		return nil
@@ -49,4 +51,40 @@ func CheckCmdAgent(o NewSessionOpts) error {
 		"  to change what a persona runs, change the PID's command: or its runtime file\n"+
 		"  to run your own line, launch it without --agent — it gets no PID, no gates and none of the rendered launch flags",
 		o.Agent)
+}
+
+// CheckRecipeCmdAgent refuses a recipe declaring `command:` beside `agent:`
+// — the same silent discard one layer up (ranger-base-g27p4, the arm the
+// paragraph above filed). It is pure for the same reason, and it is a
+// SEPARATE refusal rather than CheckCmdAgent asked over the recipe's
+// NewSessionOpts: the reader is editing a YAML file, so the message has to
+// name `command:` and `agent:` — two keys in a file it can point at — and
+// prescribe the spelling that file already documents (`command: null`).
+// `--cmd`/`--agent` would name two flags this operator never typed.
+//
+// It reads the LOADED values and not the keys' presence, which is what
+// keeps the documented form legal: YamlGet reads `null`, `~` and an empty
+// value as unset (yamlflat.go), so `command: null` beside `agent: <p>` —
+// examples/recipes/codex-projA.yaml's own prescription, and the form
+// ~/homes/ranger/recipes/codex-src.yaml already carries — is not the pair
+// and launches as it always did.
+//
+// Asked from LaunchRecipe and NOT from LoadRecipe, which is the one choice
+// here worth recording: `posse recipes` loads every recipe to print it and
+// drops the ones that error (`if r, err := a.LoadRecipe(n); err == nil`),
+// so a refusal at load would make a recipe carrying the pair VANISH from
+// the listing — a silent discard of exactly the class this bead is about,
+// traded for the one it fixes. LaunchRecipe is also where the discard
+// actually happens, so that is where the operator is standing when they
+// are told.
+func CheckRecipeCmdAgent(r *Recipe) error {
+	if r == nil || r.Command == "" || r.Agent == "" {
+		return nil
+	}
+	return Die("recipe %s declares command: beside agent: %s — a persona's line is rendered from its PID and its runtime's "+
+		"template, so the command: you declared (%s) would be discarded in silence (ADR 0002 §1)\n"+
+		"  to launch the persona, write `command: null` — the runtime's template renders the line\n"+
+		"  to run that line yourself, drop `agent:` — the session gets no PID, no gates and none of the rendered launch flags\n"+
+		"  to change what the persona runs, change its PID's command: or its runtime file",
+		r.Path, r.Agent, r.Command)
 }

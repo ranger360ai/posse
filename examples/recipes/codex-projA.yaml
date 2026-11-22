@@ -15,7 +15,13 @@
 #   agent: <persona>     # a PID in agents/; this seed ships none, see examples/agents/
 #   runtime: codex       # overrides that PID's own runtime: for this recipe
 #   tier: standard       # overrides that PID's own tier: for this recipe
-#   command: null        # the runtime's template renders it — do not hand-write it
+#   command: null        # the runtime's template renders it — a hand-written one is REFUSED
+#
+# That last line is a refusal and not advice (ranger-base-g27p4): `command:`
+# carrying a value beside `agent:` names two launches and posse can open only
+# the persona's, so `posse recipe` refuses the pair by name rather than running
+# the render and dropping your line without a word. `command: null`, `~` and an
+# absent key all read as unset, and all three launch.
 name: codex-projA
 purpose: codex
 dir: ~/code/projA
