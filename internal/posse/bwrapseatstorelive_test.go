@@ -18,6 +18,40 @@ package posse
 // EVERY REFUSAL IS READ BACK FROM OUTSIDE. A wall row that trusts the exit
 // code measures the shell; the shared store's file, its mode and what the
 // operator's `cat-file` serves are what the hole was about.
+//
+// AND EVERY ACCOUNT-CARRYING MESSAGE NAMES ITS PATHS SYMBOLICALLY
+// (ranger-base-bj1hh). `scripts/posse-wall-check`'s evidence() puts a failed
+// member's FIRST `file.go:NN:` line on a P1 bead, truncated to 300
+// characters, so whatever a message spends before bgSeatAccount's value is
+// what the bead loses — and an interpolated fixture path spends 49 to 123 of
+// it here and 50 more again in ADR 0097 D1's venue, which is the venue that
+// files the bead: every path in this file descends from a t.TempDir() named
+// after the calling test, and that venue's TMPDIR is 54 characters against
+// /tmp's 4.
+//
+// MEASURED 2026-11-22 on this box (linux 7.2.15-1-omarchy, go1.27.3,
+// bubblewrap 0.13.1, TMPDIR unset) at c28d67f4, by parsing this file's own
+// format strings and spending each verb's widest value — five rows reached
+// the bead with ZERO characters of account and a sixth with 13: :808 began
+// its account at 518 of 300 here and 668 in the venue, :751 at 395/495, :454
+// at 374/424, :369 at 338/388, :440 at 288/338 and :765 at 237/287. The
+// seat's exit status and its words exist nowhere else and cannot be recovered
+// after the fact. docs/notes.d/ranger-base-bj1hh.md has the table and the
+// after.
+//
+// So the rows below say `<common>`, `<common>/worktrees` and `its real name`
+// — the names this file's prose and ADR 0100 already use — and name an object
+// by `sha[:12]`, which is what the read-backs were already written in. No row
+// here interpolates a TMPDIR-derived path any more, so this file's line
+// budget no longer depends on which venue reads it. A path is in the source
+// at the line number the bead carries; an account is not.
+//
+// The two shapes that do NOT work, both measured by the bead: the paths
+// cannot go on a line 2, because everything after a newline is dropped in
+// transit and internal/treepins/wallmemberaccount_qa_test.go arm 2 reds a
+// newline in any such format string; and they cannot go in a t.Logf beside a
+// t.Errorf of the account, because evidence() takes the FIRST `file.go:NN:`
+// line and the Logf would win.
 
 import (
 	"crypto/sha256"
@@ -366,7 +400,10 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 	// read from outside. Without this row, a seat whose image has no
 	// `sha256sum` would turn that control into a line that can never red.
 	if ok, out, acct := f.in(t, f.argvBefore, "", "sh", "-c", "sha256sum -- "+file); !ok || !strings.HasPrefix(out, want.Sum) {
-		t.Fatalf("CONTROL: the pre-store render cannot digest the shared object's own file at %s (want %s, got %q, seat: %s) — then the per-shape control below could never red", file, want.Sum, out, acct)
+		// `out` is not interpolated: the account IS the seat's words, so a
+		// `got %q` here would spend the budget saying twice what reaches the
+		// bead once (the header says what that costs).
+		t.Fatalf("CONTROL: the pre-store render cannot digest %s at its real name (want %s) — then the per-shape control below could never red: %s", sha[:12], want.Sum[:12], acct)
 	}
 	side := filepath.Join(f.base, sha[:2], sha[2:])
 
@@ -437,7 +474,10 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 			} {
 				ok, _, acct := f.in(t, shape.argv, "", c.arg...)
 				if p.refused && ok {
-					t.Errorf("%s: a committing seat could %s the shared object by %s %s: %s", shape.name, c.name, p.where, p.path, acct)
+					// `p.where` already names the path this row typed, so
+					// `p.path` beside it is 98-174 characters of the
+					// account's budget spent on a second spelling.
+					t.Errorf("%s: a committing seat could %s the shared object %s by %s: %s", shape.name, c.name, sha[:12], p.where, acct)
 				}
 				if got := f.shared(t, file, sha); got != want {
 					t.Errorf("%s: %s by %s (%s) changed the shared object %s\n want %+v\n  got %+v", shape.name, c.name, p.where, p.path, sha[:12], want, got)
@@ -451,7 +491,10 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 		// is load-bearing — without it the write fails for want of a
 		// directory and the rows above are refusals of the fixture.
 		if ok, _, acct := f.in(t, shape.argv, "", "sh", "-c", "printf evil > "+file+".new && mv -f "+file+".new "+file); !ok {
-			t.Errorf("%s: the seat could not write at %s even into its own store, where this fixture planted a %s directory — then every real-name row above is a refusal of the fixture and not a reading of the wall: %s", shape.name, file, sha[:2], acct)
+			// What a failure here costs the rows above — they refused the
+			// fixture rather than reading the wall — is the paragraph above
+			// this `if`, and not 49 more characters of the account's budget.
+			t.Errorf("%s: the seat could not write %s at its real name even into its own store, where this fixture planted %s/: %s", shape.name, sha[:12], sha[:2], acct)
 		} else if b, err := os.ReadFile(filepath.Join(f.store, sha[:2], sha[2:])); err != nil || string(b) != "evil" {
 			t.Errorf("%s: the seat's write at %s exited 0 and its own store does not hold what it wrote (%q, %v) — so that write landed somewhere neither this row nor the read-back is looking", shape.name, file, b, err)
 		}
@@ -744,13 +787,21 @@ func TestLiveBwrapSeatStoreWideGrantPinsTheLooseComponent(t *testing.T) {
 
 	// The live half: the pin the arm above read off the argv, as the kernel
 	// enforces it.
+	//
+	// WHAT A SUCCESS HERE COSTS, which used to be the second half of the
+	// first row's own message and is here instead (ranger-base-bj1hh): the
+	// next launch binds whatever a leftover of this seat plants at
+	// `<common>/worktrees`, read-write and with no race to win. Both rows
+	// name that directory rather than interpolating it, and the first named
+	// `<common>` beside it — two absolute temp paths, 160 characters here and
+	// 260 in the venue, which is the whole reason its account arrived empty.
 	argv := f.render(t, wide, f.binds(t))
 	moved := wt + ".stolen"
 	switch ok, out, acct := f.in(t, argv, "", "mv", "-f", wt, moved); {
 	case ok:
-		t.Errorf("a seat granted %s whole renamed %s, which this render binds in place — then the next launch binds whatever a leftover of this seat plants at that name, read-write and with no race to win (ADR 0100 D2(b)): %s", f.common, wt, acct)
+		t.Errorf("a seat granted <common> whole renamed <common>/worktrees, which this render binds in place (ADR 0100 D2(b)): %s", acct)
 	case !strings.Contains(out, "busy"):
-		t.Errorf("the rename of %s was refused by something other than the mount: %s", wt, acct)
+		t.Errorf("the rename of <common>/worktrees was refused by something other than the mount: %s", acct)
 	}
 
 	// THE CONTROL, and it is the cut argv handed to bwrap rather than to the
@@ -762,7 +813,7 @@ func TestLiveBwrapSeatStoreWideGrantPinsTheLooseComponent(t *testing.T) {
 		t.Fatalf("CONTROL: %s is a mount destination of this render by some option other than an in-place --bind, so the row below measures nothing\n argv: %q", wt, argv)
 	}
 	if ok, _, acct := f.in(t, cut, "", "mv", "-f", wt, moved); !ok {
-		t.Fatalf("NOTHING MEASURED: a namespace with no mount over %s could not rename it either, so the refusal above is not the mount's: %s", wt, acct)
+		t.Fatalf("NOTHING MEASURED: a namespace with no mount over <common>/worktrees could not rename it either, so the refusal above is not the mount's: %s", acct)
 	}
 	if _, err := os.Lstat(moved); err != nil {
 		t.Errorf("the control's rename reported success and %s is not there: %v", moved, err)
@@ -805,7 +856,11 @@ func TestLiveBwrapSeatStoreHostPathIsUnreachableInTheWall(t *testing.T) {
 		{"rename the wall dir", "mv -f " + wall + " " + wall + ".x"},
 	} {
 		if ok, _, acct := f.in(t, f.argv, "", "sh", "-c", c.sh); ok {
-			t.Errorf("a walled seat could %s — the next launch's bind source is the seat's to choose (ADR 0100 D1); it ran %q and the seat answered %s", c.name, c.sh, acct)
+			// `c.sh` is not interpolated: each of those five lines carries
+			// one to three absolute seat-store paths, and `c.name` is the
+			// same claim in words. The line is `c.sh` in the table above, at
+			// the file and line number the bead already carries.
+			t.Errorf("a walled seat could %s — the next launch's bind source is the seat's to choose (ADR 0100 D1): %s", c.name, acct)
 		}
 	}
 	// And the store is still a directory with the alternates the launcher
