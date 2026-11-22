@@ -259,7 +259,7 @@ func bgSeatAccount(err error, out string) string {
 	// strings.Fields, which is wwOneLine's own emptiness test, so "said
 	// nothing" means the same thing at both ends of the fold.
 	if len(strings.Fields(out)) == 0 {
-		return status + ", and the seat said NOTHING — so that status is the whole account: no git error and no bwrap refusal, which is the shape of a seat ended from outside rather than one the wall turned away"
+		return status + ", and the seat said NOTHING — so that status is the whole account: no error from the command and no bwrap refusal, which is the shape of a seat ended from outside rather than one the wall turned away"
 	}
 	return status + ", and the seat said " + wwOneLine(out)
 }

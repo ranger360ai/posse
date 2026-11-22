@@ -288,13 +288,26 @@ func TestLiveWallClaudeProjectsANonOwnCwdRunsTheRealClaudeAndWritesNoTranscript(
 			"DISABLE_AUTOUPDATER=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1", "CLAUDE_CODE_MAX_RETRIES=0")
 		done := make(chan struct{})
 		var out []byte
-		go func() { out, _ = cmd.CombinedOutput(); close(done) }()
+		// runErr and not `_` (ranger-base-s9h52): this goroutine used to
+		// blank the seat's error, so a claude that the wall refused outright
+		// and a claude that ran reported identically — and the tree-equality
+		// arm below passes either way. Both readers are after `<-done`, which
+		// the goroutine closes last, so neither races it.
+		var runErr error
+		go func() { out, runErr = cmd.CombinedOutput(); close(done) }()
 		select {
 		case <-done:
 		case <-time.After(90 * time.Second):
 			_ = cmd.Process.Kill()
 			<-done
-			t.Fatalf("claude -p under the wall for cwd %s did not end in 90s — D3 assumes an unwritable transcript dir is survivable, and a seat that hangs is the failure that assumption rules out:\n%s", cwd, out)
+			// One line, with the status: `signal: killed` says the Kill
+			// above ended it and `exit status N` says it was already gone,
+			// and the wall check carries only this first line to the bead
+			// (ADR 0097 D3).
+			t.Fatalf("claude -p under the wall for cwd %s did not end in 90s — D3 assumes an unwritable transcript dir is survivable, and a seat that hangs is the failure that assumption rules out; the seat answered %s", cwd, bgSeatAccount(runErr, string(out)))
+		}
+		if runErr != nil {
+			t.Logf("claude -p under the wall for cwd %s ended badly, which this pin does not assert on — it reads the projects/ tree, not the exit — but a reader of a red below needs it: %s", cwd, bgSeatAccount(runErr, string(out)))
 		}
 		return strings.TrimSpace(string(out))
 	}

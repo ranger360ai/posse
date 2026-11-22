@@ -133,14 +133,26 @@ func (f bsLive) render(t *testing.T, set []string, private []PrivateBind) []stri
 	return argv
 }
 
-func (f bsLive) in(t *testing.T, argv []string, stdin string, arg ...string) (bool, string) {
+func (f bsLive) in(t *testing.T, argv []string, stdin string, arg ...string) (bool, string, string) {
 	t.Helper()
 	cmd := exec.Command("bwrap", append(append([]string{}, argv...), arg...)...)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
 	out, err := cmd.CombinedOutput()
-	return err == nil, strings.TrimSpace(string(out))
+	// THREE results, and the third is the whole of ranger-base-s9h52 here.
+	// This runner used to answer `err == nil` and the trimmed output, so the
+	// seat's exit status never existed as text: a git that exited 128 at
+	// `cannot lock ref` and a seat ended from outside produced byte-identical
+	// reports, which is ranger-base-axt1f at its own two runners
+	// (bwrapgitrefslive_test.go). The census of the member set found this
+	// runner and srLive.in the last two copies of that shape.
+	//
+	// The raw output stays, because callers READ it — a sha, a digest line,
+	// bwrap's `busy` — and bgSeatAccount's account is what they SAY. Keeping
+	// them as two results is what lets both be true at once: one return
+	// expression, no branch, and no caller choosing between them.
+	return err == nil, strings.TrimSpace(string(out)), bgSeatAccount(err, string(out))
 }
 
 func (f bsLive) git(arg ...string) []string {
@@ -327,8 +339,8 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 
 	ctlSha, ctlFile := f.sharedObject(t, "the control's object\n")
 
-	if ok, out := f.in(t, f.argvBefore, "", "rm", "-f", ctlFile); !ok {
-		t.Fatalf("CONTROL: the pre-store render refused unlinking %s, so the arms below cannot be told from the file's own mode:\n%s", ctlSha[:12], out)
+	if ok, _, acct := f.in(t, f.argvBefore, "", "rm", "-f", ctlFile); !ok {
+		t.Fatalf("CONTROL: the pre-store render refused unlinking %s, so the arms below cannot be told from the file's own mode: %s", ctlSha[:12], acct)
 	}
 	if _, err := os.Stat(ctlFile); err == nil {
 		t.Fatal("CONTROL: the pre-store render's unlink exited 0 and the shared object is still there")
@@ -345,8 +357,8 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 	// there can digest the shared object's own file, and the digest is the one
 	// read from outside. Without this row, a seat whose image has no
 	// `sha256sum` would turn that control into a line that can never red.
-	if ok, out := f.in(t, f.argvBefore, "", "sh", "-c", "sha256sum -- "+file); !ok || !strings.HasPrefix(out, want.Sum) {
-		t.Fatalf("CONTROL: the pre-store render cannot digest the shared object's own file at %s (ok=%v, %q, want %s) — then the per-shape control below could never red", file, ok, out, want.Sum)
+	if ok, out, acct := f.in(t, f.argvBefore, "", "sh", "-c", "sha256sum -- "+file); !ok || !strings.HasPrefix(out, want.Sum) {
+		t.Fatalf("CONTROL: the pre-store render cannot digest the shared object's own file at %s (want %s, got %q, seat: %s) — then the per-shape control below could never red", file, want.Sum, out, acct)
 	}
 	side := filepath.Join(f.base, sha[:2], sha[2:])
 
@@ -393,7 +405,7 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 		// this row stayed GREEN under the mutant that binds
 		// `<common>/objects` in place read-write, the one render it exists to
 		// catch, while every read-back below red.
-		if ok, out := f.in(t, shape.argv, "", "sh", "-c", "sha256sum -- "+file); ok && strings.HasPrefix(out, want.Sum) {
+		if ok, out, _ := f.in(t, shape.argv, "", "sh", "-c", "sha256sum -- "+file); ok && strings.HasPrefix(out, want.Sum) {
 			t.Errorf("%s: the seat digests the shared object's OWN file at %s (%q), so its store does not cover `<common>/objects` and the real-name rows below measure history rather than the seat's store", shape.name, file, out)
 		}
 		for _, p := range []struct {
@@ -415,9 +427,9 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 				{"rename over", []string{"sh", "-c", "printf evil > " + p.path + ".new && mv -f " + p.path + ".new " + p.path}},
 				{"rewrite in place", []string{"sh", "-c", "chmod u+w " + p.path + " && printf evil > " + p.path}},
 			} {
-				ok, out := f.in(t, shape.argv, "", c.arg...)
+				ok, _, acct := f.in(t, shape.argv, "", c.arg...)
 				if p.refused && ok {
-					t.Errorf("%s: a committing seat could %s the shared object by %s %s:\n%s", shape.name, c.name, p.where, p.path, out)
+					t.Errorf("%s: a committing seat could %s the shared object by %s %s: %s", shape.name, c.name, p.where, p.path, acct)
 				}
 				if got := f.shared(t, file, sha); got != want {
 					t.Errorf("%s: %s by %s (%s) changed the shared object %s\n want %+v\n  got %+v", shape.name, c.name, p.where, p.path, sha[:12], want, got)
@@ -430,8 +442,8 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 		// own store, not refused. This row is also what says the plant above
 		// is load-bearing — without it the write fails for want of a
 		// directory and the rows above are refusals of the fixture.
-		if ok, out := f.in(t, shape.argv, "", "sh", "-c", "printf evil > "+file+".new && mv -f "+file+".new "+file); !ok {
-			t.Errorf("%s: the seat could not write at %s even into its own store, where this fixture planted a %s directory — then every real-name row above is a refusal of the fixture and not a reading of the wall:\n%s", shape.name, file, sha[:2], out)
+		if ok, _, acct := f.in(t, shape.argv, "", "sh", "-c", "printf evil > "+file+".new && mv -f "+file+".new "+file); !ok {
+			t.Errorf("%s: the seat could not write at %s even into its own store, where this fixture planted a %s directory — then every real-name row above is a refusal of the fixture and not a reading of the wall: %s", shape.name, file, sha[:2], acct)
 		} else if b, err := os.ReadFile(filepath.Join(f.store, sha[:2], sha[2:])); err != nil || string(b) != "evil" {
 			t.Errorf("%s: the seat's write at %s exited 0 and its own store does not hold what it wrote (%q, %v) — so that write landed somewhere neither this row nor the read-back is looking", shape.name, file, b, err)
 		}
@@ -439,12 +451,12 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 			t.Errorf("%s: a write at %s reached the shared object %s\n want %+v\n  got %+v", shape.name, file, sha[:12], want, got)
 		}
 		f.clearSeatCopy(t, sha)
-		if ok, out := f.in(t, shape.argv, "", f.git("cat-file", "-p", sha)...); !ok || out+"\n" != honest {
-			t.Errorf("%s: the seat cannot read history through its store's alternates (ok=%v): %q", shape.name, ok, out)
+		if ok, out, acct := f.in(t, shape.argv, "", f.git("cat-file", "-p", sha)...); !ok || out+"\n" != honest {
+			t.Errorf("%s: the seat cannot read history through its store's alternates (served %q, seat: %s)", shape.name, out, acct)
 		}
-		ok, out := f.in(t, shape.argv, "a new object "+shape.name+"\n", f.git("hash-object", "-w", "--stdin")...)
+		ok, out, acct := f.in(t, shape.argv, "a new object "+shape.name+"\n", f.git("hash-object", "-w", "--stdin")...)
 		if !ok {
-			t.Fatalf("%s: a committing seat cannot write a NEW object:\n%s", shape.name, out)
+			t.Fatalf("%s: a committing seat cannot write a NEW object: %s", shape.name, acct)
 		}
 		if _, err := os.Stat(filepath.Join(f.store, out[:2], out[2:])); err != nil {
 			t.Errorf("%s: the new object %s is not in the seat's own store: %v", shape.name, out[:12], err)
@@ -452,8 +464,8 @@ func TestLiveBwrapSeatStoreRefusesRewritingASharedObject(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(f.common, "objects", out[:2], out[2:])); err == nil {
 			t.Errorf("%s: the new object %s was written into the SHARED store", shape.name, out[:12])
 		}
-		if ok, out := f.in(t, shape.argv, "", f.git("commit", "-q", "--allow-empty", "-m", "21i98 "+shape.name)...); !ok {
-			t.Errorf("%s: a committing seat cannot commit under its store:\n%s", shape.name, out)
+		if ok, _, acct := f.in(t, shape.argv, "", f.git("commit", "-q", "--allow-empty", "-m", "21i98 "+shape.name)...); !ok {
+			t.Errorf("%s: a committing seat cannot commit under its store: %s", shape.name, acct)
 		}
 	}
 
@@ -726,11 +738,11 @@ func TestLiveBwrapSeatStoreWideGrantPinsTheLooseComponent(t *testing.T) {
 	// enforces it.
 	argv := f.render(t, wide, f.binds(t))
 	moved := wt + ".stolen"
-	switch ok, out := f.in(t, argv, "", "mv", "-f", wt, moved); {
+	switch ok, out, acct := f.in(t, argv, "", "mv", "-f", wt, moved); {
 	case ok:
-		t.Errorf("a seat granted %s whole renamed %s, which this render binds in place — then the next launch binds whatever a leftover of this seat plants at that name, read-write and with no race to win (ADR 0100 D2(b))\n%s", f.common, wt, out)
+		t.Errorf("a seat granted %s whole renamed %s, which this render binds in place — then the next launch binds whatever a leftover of this seat plants at that name, read-write and with no race to win (ADR 0100 D2(b)): %s", f.common, wt, acct)
 	case !strings.Contains(out, "busy"):
-		t.Errorf("the rename of %s was refused by something other than the mount: %s", wt, out)
+		t.Errorf("the rename of %s was refused by something other than the mount: %s", wt, acct)
 	}
 
 	// THE CONTROL, and it is the cut argv handed to bwrap rather than to the
@@ -741,8 +753,8 @@ func TestLiveBwrapSeatStoreWideGrantPinsTheLooseComponent(t *testing.T) {
 	if len(cut) == len(argv) {
 		t.Fatalf("CONTROL: %s is a mount destination of this render by some option other than an in-place --bind, so the row below measures nothing\n argv: %q", wt, argv)
 	}
-	if ok, out := f.in(t, cut, "", "mv", "-f", wt, moved); !ok {
-		t.Fatalf("NOTHING MEASURED: a namespace with no mount over %s could not rename it either, so the refusal above is not the mount's:\n%s", wt, out)
+	if ok, _, acct := f.in(t, cut, "", "mv", "-f", wt, moved); !ok {
+		t.Fatalf("NOTHING MEASURED: a namespace with no mount over %s could not rename it either, so the refusal above is not the mount's: %s", wt, acct)
 	}
 	if _, err := os.Lstat(moved); err != nil {
 		t.Errorf("the control's rename reported success and %s is not there: %v", moved, err)
@@ -774,8 +786,8 @@ func TestLiveBwrapSeatStoreHostPathIsUnreachableInTheWall(t *testing.T) {
 	}
 	// The CONTENTS are reachable, at the mount and only there: the control
 	// that says the rows below are about the name and not about the store.
-	if ok, out := f.in(t, f.argv, "x\n", f.git("hash-object", "-w", "--stdin")...); !ok {
-		t.Fatalf("CONTROL: the seat cannot write an object at all, so nothing below is about the wall:\n%s", out)
+	if ok, _, acct := f.in(t, f.argv, "x\n", f.git("hash-object", "-w", "--stdin")...); !ok {
+		t.Fatalf("CONTROL: the seat cannot write an object at all, so nothing below is about the wall: %s", acct)
 	}
 	for _, c := range []struct{ name, sh string }{
 		{"write into the store by its host path", "printf evil > " + f.store + "/evil"},
@@ -784,8 +796,8 @@ func TestLiveBwrapSeatStoreHostPathIsUnreachableInTheWall(t *testing.T) {
 		{"write in the wall dir above it", "printf evil > " + wall + "/evil"},
 		{"rename the wall dir", "mv -f " + wall + " " + wall + ".x"},
 	} {
-		if ok, out := f.in(t, f.argv, "", "sh", "-c", c.sh); ok {
-			t.Errorf("a walled seat could %s — the next launch's bind source is the seat's to choose (ADR 0100 D1)\n %s\n%s", c.name, c.sh, out)
+		if ok, _, acct := f.in(t, f.argv, "", "sh", "-c", c.sh); ok {
+			t.Errorf("a walled seat could %s — the next launch's bind source is the seat's to choose (ADR 0100 D1); it ran %q and the seat answered %s", c.name, c.sh, acct)
 		}
 	}
 	// And the store is still a directory with the alternates the launcher
@@ -812,10 +824,10 @@ func TestLiveBwrapSeatStoreLandsHonestWorkAndNeverATamperedObject(t *testing.T) 
 	t.Run("honest", func(t *testing.T) {
 		t.Parallel()
 		f := bsLiveFixture(t)
-		ok, out := f.in(t, f.argv, "", "sh", "-c",
+		ok, _, acct := f.in(t, f.argv, "", "sh", "-c",
 			"printf 'the work\\n' > fix.txt && "+strings.Join(f.git("add", "fix.txt"), " ")+" && "+strings.Join(f.git("commit", "-q", "-m", "s-1:fix"), " "))
 		if !ok {
-			t.Fatalf("the seat could not commit under its store:\n%s", out)
+			t.Fatalf("the seat could not commit under its store: %s", acct)
 		}
 		head := mustGit(t, f.tr.Path, "rev-parse", "HEAD")
 		if siHas(t, f.repo, head) {
@@ -838,20 +850,20 @@ func TestLiveBwrapSeatStoreLandsHonestWorkAndNeverATamperedObject(t *testing.T) 
 	t.Run("tampered", func(t *testing.T) {
 		t.Parallel()
 		f := bsLiveFixture(t)
-		ok, out := f.in(t, f.argv, "", "sh", "-c",
+		ok, _, acct := f.in(t, f.argv, "", "sh", "-c",
 			"printf 'the claimed bytes\\n' > fix.txt && "+strings.Join(f.git("add", "fix.txt"), " ")+" && "+strings.Join(f.git("commit", "-q", "-m", "s-1:fix"), " "))
 		if !ok {
-			t.Fatalf("the seat could not commit under its store:\n%s", out)
+			t.Fatalf("the seat could not commit under its store: %s", acct)
 		}
 		// Read inside the wall: outside, before the import, the tip's
 		// objects are not there to read (ADR 0099 D6).
-		ok, claimed := f.in(t, f.argv, "", f.git("rev-parse", "HEAD:fix.txt")...)
+		ok, claimed, acct := f.in(t, f.argv, "", f.git("rev-parse", "HEAD:fix.txt")...)
 		if !ok {
-			t.Fatalf("the seat cannot read its own commit:\n%s", claimed)
+			t.Fatalf("the seat cannot read its own commit: %s", acct)
 		}
-		ok, forged := f.in(t, f.argv, "the forged bytes\n", f.git("hash-object", "-w", "--stdin")...)
+		ok, forged, acct := f.in(t, f.argv, "the forged bytes\n", f.git("hash-object", "-w", "--stdin")...)
 		if !ok {
-			t.Fatalf("the seat could not write the forged object:\n%s", forged)
+			t.Fatalf("the seat could not write the forged object: %s", acct)
 		}
 		// THROUGH `<common>/objects`, which is the only name the seat has
 		// for its own store since ADR 0100 D1: the store's host path is
@@ -861,8 +873,8 @@ func TestLiveBwrapSeatStoreLandsHonestWorkAndNeverATamperedObject(t *testing.T) 
 		// can really do.
 		inStore := func(sha string) string { return filepath.Join(f.common, "objects", sha[:2], sha[2:]) }
 		from, to := inStore(forged), inStore(claimed)
-		if ok, out := f.in(t, f.argv, "", "mv", "-f", from, to); !ok {
-			t.Fatalf("CONTROL: the seat could not rewrite an object in its OWN store, so this is not the tamper the landing is for:\n%s", out)
+		if ok, _, acct := f.in(t, f.argv, "", "mv", "-f", from, to); !ok {
+			t.Fatalf("CONTROL: the seat could not rewrite an object in its OWN store, so this is not the tamper the landing is for: %s", acct)
 		}
 		before := mustGit(t, f.repo, "rev-parse", "main")
 		o, err := MergeSessionWork(f.a, f.tr)
@@ -898,10 +910,10 @@ func TestLiveBwrapSeatStoreLandsHonestWorkAndNeverATamperedObject(t *testing.T) 
 func TestLiveBwrapSeatStoreOperatorGcAfterTheWatchPassImport(t *testing.T) {
 	t.Parallel()
 	f := bsLiveFixture(t)
-	ok, out := f.in(t, f.argv, "", "sh", "-c",
+	ok, _, acct := f.in(t, f.argv, "", "sh", "-c",
 		"printf 'staged, never committed\\n' > staged.txt && "+strings.Join(f.git("add", "staged.txt"), " "))
 	if !ok {
-		t.Fatalf("the seat could not stage under its store:\n%s", out)
+		t.Fatalf("the seat could not stage under its store: %s", acct)
 	}
 	if _, err := git(f.repo, "gc", "-q"); err == nil {
 		t.Fatal("CONTROL: gc succeeded with a staged blob only the seat store holds, so the import has nothing to fix")

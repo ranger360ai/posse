@@ -132,14 +132,18 @@ func (f srLive) render(t *testing.T, set []string, binds []PrivateBind) []string
 	return argv
 }
 
-func (f srLive) in(t *testing.T, argv []string, stdin string, arg ...string) (bool, string) {
+func (f srLive) in(t *testing.T, argv []string, stdin string, arg ...string) (bool, string, string) {
 	t.Helper()
 	cmd := exec.Command("bwrap", append(append([]string{}, argv...), arg...)...)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
 	out, err := cmd.CombinedOutput()
-	return err == nil, strings.TrimSpace(string(out))
+	// THREE results, for bsLive.in's reason (ranger-base-s9h52): the raw
+	// output is what a caller READS, the account is what a caller SAYS, and
+	// a runner that answers only `err == nil` has destroyed the exit status
+	// before any message is formatted. No line budget brings that back.
+	return err == nil, strings.TrimSpace(string(out)), bgSeatAccount(err, string(out))
 }
 
 // storeGit is a git invocation aimed at the STORE repo, with an identity so
@@ -155,14 +159,14 @@ func (f srLive) storeGit(arg ...string) []string {
 func TestLiveBwrapStoreRepoRecordStageStillReaches(t *testing.T) {
 	f := srLiveFixture(t)
 	jsonl := filepath.Join(f.home, "issues.jsonl")
-	if ok, out := f.in(t, f.argv, "", "sh", "-c", "echo '{\"id\":\"q-2\"}' >> "+jsonl); !ok {
-		t.Fatalf("the seat cannot append to the store of record, so the wall this bead adds costs the record stage:\n%s", out)
+	if ok, _, acct := f.in(t, f.argv, "", "sh", "-c", "echo '{\"id\":\"q-2\"}' >> "+jsonl); !ok {
+		t.Fatalf("the seat cannot append to the store of record, so the wall this bead adds costs the record stage: %s", acct)
 	}
 	if b, err := os.ReadFile(jsonl); err != nil || !strings.Contains(string(b), "q-2") {
 		t.Fatalf("the seat's append did not reach the host's store: %q %v", string(b), err)
 	}
-	if ok, out := f.in(t, f.argv, "", "sh", "-c", "touch "+filepath.Join(f.home, "beads.db")); !ok {
-		t.Errorf("the seat cannot write the store's database:\n%s", out)
+	if ok, _, acct := f.in(t, f.argv, "", "sh", "-c", "touch "+filepath.Join(f.home, "beads.db")); !ok {
+		t.Errorf("the seat cannot write the store's database: %s", acct)
 	}
 }
 
@@ -214,8 +218,8 @@ func TestLiveBwrapStoreRepoGitIsReadOnlyToTheSeat(t *testing.T) {
 			head := f.headSha()
 			alternates := filepath.Join(f.gitDir, "objects", "info", "alternates")
 
-			if ok, out := f.in(t, f.argv, r.stdin, r.arg(f)...); ok {
-				t.Errorf("a seat could %s — that is the hole ranger-base-kfrpv closes:\n%s", r.name, out)
+			if ok, _, acct := f.in(t, f.argv, r.stdin, r.arg(f)...); ok {
+				t.Errorf("a seat could %s — that is the hole ranger-base-kfrpv closes: %s", r.name, acct)
 			}
 			// Read back from outside: the object the operator's git serves,
 			// the ref it reads, and the two resolution files.
@@ -239,8 +243,8 @@ func TestLiveBwrapStoreRepoGitIsReadOnlyToTheSeat(t *testing.T) {
 			// does the thing: under the render this bead replaced the row
 			// succeeds, so the refusal above is this wall and not the
 			// fixture or a malformed command.
-			if ok, out := f.in(t, f.argvBefore, r.stdin, r.arg(f)...); !ok {
-				t.Errorf("CONTROL: the pre-fix render refused it too, so this row cannot be told from an unwritable fixture:\n%s", out)
+			if ok, _, acct := f.in(t, f.argvBefore, r.stdin, r.arg(f)...); !ok {
+				t.Errorf("CONTROL: the pre-fix render refused it too, so this row cannot be told from an unwritable fixture: %s", acct)
 			}
 		})
 	}
