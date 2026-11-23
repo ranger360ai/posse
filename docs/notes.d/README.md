@@ -64,6 +64,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-6felj](ranger-base-6felj.md) — A verdict file's reading is its LAST word on the kill (ranger-base-6felj) — 2026-11-22
 - [ranger-base-5pkix](ranger-base-5pkix.md) — Four code findings from ranger-base-j7ekm's verify (ranger-base-5pkix) — 2026-11-22
 - [ranger-base-5k7vf](ranger-base-5k7vf.md) — A seat whose wall-watch AND bwrap are both gone has no lifetime bound, so the watch tick kills it (ranger-base-5k7vf) — 2026-11-22
+- [ranger-base-4uiwo](ranger-base-4uiwo.md) — A pipe's writer count is not a claim about the call under test (ranger-base-4uiwo) — 2026-11-22
 - [ranger-base-3s2ig](ranger-base-3s2ig.md) — ranger-base-3s2ig — the landing chain asks about parks now, and what reading one costs — 2026-11-22
 - [ranger-base-3bhxb](ranger-base-3bhxb.md) — The park census has one base, and the carrier annotation is witnessed — 2026-11-22
 - [ranger-base-2unmh](ranger-base-2unmh.md) — Four closes verified, and four arms nothing witnessed (ranger-base-2unmh) — 2026-11-22
