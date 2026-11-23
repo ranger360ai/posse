@@ -519,22 +519,22 @@ func TestTheUnaddressedRexDetectorFlagsTheLinesItIsFor(t *testing.T) {
 // endpoint comes from, so the lines that pass it on are read by arm 3 instead.
 func TestNoTrackedShellScriptCallsRexWithoutNamingItsServer(t *testing.T) {
 	t.Parallel()
-	out, err := exec.Command("git", "ls-files", "-z").Output()
-	if err != nil {
-		t.Fatalf("git ls-files: %v — this pin needs the checkout to name what the tree holds", err)
-	}
-	tracked := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
-	if len(tracked) < 100 {
-		t.Fatalf("git tracks %d files — the listing failed, so a clean result here is not evidence", len(tracked))
-	}
+	// patternkill_qa_test.go's corpus, for its reason AND for the hole it
+	// closed: the extension-or-shebang reading, so the three extensionless
+	// bash programs under scripts/ are read here too. MEASURED 2026-11-23
+	// (ranger-base-zpagn F2), the two lines the control arm above names as
+	// must-flag, planted inside a never-called function in
+	// scripts/posse-wall-check and then in scripts/posse-landed-check: GREEN
+	// both times, where the same plant in scripts/park-carriers.sh reds this
+	// sweep. The subject here is fix direction 1 of ranger-base-uq81v, so a
+	// program the corpus cannot see is a program that can address the fleet's
+	// own socket with nothing to say so.
+	corpus, byShebang := pkTrackedShellPrograms(t, true)
 
 	var scanned int
 	var hits []string
-	for _, rel := range tracked {
-		if rel == "" || rel == scratchRexScript {
-			continue
-		}
-		if !strings.HasSuffix(rel, ".sh") && filepath.Base(rel) != "Makefile" {
+	for _, rel := range corpus {
+		if rel == scratchRexScript {
 			continue
 		}
 		b, err := os.ReadFile(filepath.FromSlash(rel))
@@ -548,13 +548,21 @@ func TestNoTrackedShellScriptCallsRexWithoutNamingItsServer(t *testing.T) {
 			}
 		}
 	}
-	// patternkill_qa_test.go's floor, for its reason: 38 tracked .sh files
-	// plus the Makefile at the time of writing, and a floor this close to the
-	// census catches a sweep that silently NARROWS — which reads exactly like
-	// a clean result.
+	// patternkill_qa_test.go's floors, for their reasons: 39 tracked .sh
+	// files plus three extensionless bash programs plus the Makefile at the
+	// time of writing, and a floor this close to the census catches a sweep
+	// that silently NARROWS — which reads exactly like a clean result. The
+	// second floor is the one that catches the narrowing this pin actually
+	// had.
 	if scanned < 30 {
 		t.Fatalf("only %d shell files swept in the whole tracked tree — the sweep is not finding them, "+
 			"so a clean result measures nothing", scanned)
+	}
+	if byShebang < pkShebangFloor {
+		t.Fatalf("the sweep read %d program(s) whose shebang is what said it was shell, want at least %d — "+
+			"the corpus has narrowed back to an extension test, so the three extensionless bash programs "+
+			"under scripts/ are swept by nothing and a rex call that names no server is invisible in any "+
+			"of them (ranger-base-zpagn F2)", byShebang, pkShebangFloor)
 	}
 	if len(hits) > 0 {
 		t.Fatalf("a tracked script calls the rex CLI without naming a server, which addresses this box's "+

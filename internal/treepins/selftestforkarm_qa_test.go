@@ -550,9 +550,22 @@ func sfScanLines(file string, lines []string, wholeFile bool) ([]sfHit, *sfHit) 
 // The whole-file decision stays keyed on the BASENAME, because it is about the
 // script's SHAPE and not its address: a verify-*.sh is assertions top to bottom
 // wherever in scripts/ it sits.
+// THE CORPUS IS THE EXTENSION OR THE SHEBANG (ranger-base-zpagn F3, escaped
+// from ranger-base-5pkix). `*.sh` alone read 64 of the 67 tracked programs
+// under scripts/ and left out the three EXTENSIONLESS bash programs — the
+// landing gate, the post-landing judge and the wall check. That mattered here
+// more than the count says: `scripts/posse-wall-check` has thirteen assertion
+// arms and a `--self-test`, which is this pin's exact subject, and sfUnswept
+// below says the shape "is now enforced everywhere in scripts/" — a claim a
+// corpus that could not see the biggest self-test in the tree had no standing
+// to make. The reading is tsIsShell (trapstatepick_qa_test.go), the one in
+// this package, and not a copy of it; a body is read to ask, which the loop
+// below needed anyway, so the walk carries the bytes it read.
 func sfScanScripts(t *testing.T) []sfHit {
 	t.Helper()
 	var files []string
+	bodies := map[string][]byte{}
+	byShebang := 0
 	// WalkDir walks in lexical order, which is the order Glob returned, so the
 	// floor message below and every census over the result read the same as they
 	// did.
@@ -560,14 +573,25 @@ func sfScanScripts(t *testing.T) []sfHit {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || !strings.HasSuffix(d.Name(), ".sh") {
+		if d.IsDir() {
 			return nil
 		}
 		rel, err := filepath.Rel("scripts", path)
 		if err != nil {
 			return err
 		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !tsIsShell(rel, b) {
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".sh") {
+			byShebang++
+		}
 		files = append(files, rel)
+		bodies[rel] = b
 		return nil
 	}); err != nil {
 		t.Fatalf("walk scripts/: %v", err)
@@ -575,12 +599,21 @@ func sfScanScripts(t *testing.T) []sfHit {
 	if len(files) < 20 {
 		t.Fatalf("walked %d script(s) under scripts/ (%v) — the scan is reading almost nothing, so a clean result is not evidence", len(files), files)
 	}
+	// The second floor, pkTrackedShellPrograms' (patternkill_qa_test.go) and
+	// for its reason: this is the number that goes to zero when the corpus
+	// narrows back to an extension test, and nothing else moves it there.
+	// Floored at one rather than at the three the tree holds, so renaming any
+	// of them to `.sh` is ordinary work.
+	if byShebang < pkShebangFloor {
+		t.Fatalf("the walk read %d program(s) under scripts/ whose shebang is what said it was shell, want "+
+			"at least %d — the corpus has narrowed back to an extension test, so scripts/posse-wall-check's "+
+			"thirteen assertion arms and its --self-test are scanned by nothing and sfUnswept's claim that "+
+			"the shape is enforced everywhere in scripts/ stops being true (ranger-base-zpagn F3)",
+			byShebang, pkShebangFloor)
+	}
 	var all []sfHit
 	for _, rel := range files {
-		b, err := os.ReadFile(filepath.Join("scripts", rel))
-		if err != nil {
-			t.Fatalf("read scripts/%s: %v", rel, err)
-		}
+		b := bodies[rel]
 		// A verify-*.sh is assertions from top to bottom; cleanroom.sh is a
 		// preflight prober with the same shape and no --self-test to scope to.
 		base := filepath.Base(rel)

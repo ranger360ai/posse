@@ -198,35 +198,90 @@ func TestThePatternKillDetectorFlagsTheLinesItIsFor(t *testing.T) {
 	}
 }
 
-// TestNoShippedShellScriptCallsAPatternKill sweeps what posse ships. The
-// ruling is crew-wide and its realization is a PATH shim, so a `pkill` left in
-// a script is not a style question: it is a call that will be refused, into a
-// `2>/dev/null`, with the arm above it reporting whatever the un-reaped
-// process makes true.
-func TestNoShippedShellScriptCallsAPatternKill(t *testing.T) {
+// pkTrackedShellPrograms answers the corpus both sweeps in this file read:
+// every shell program this repository tracks, judged by the extension OR the
+// `#!` first line, plus the Makefile when the caller's subject reaches it. It
+// returns the paths in `git ls-files` order and how many of them the SHEBANG
+// decided — the second number is the positive witness each caller floors,
+// because a corpus narrowed back to the extension test reads zero of them and
+// otherwise looks exactly like a clean sweep.
+//
+// WHY THE SHEBANG (ranger-base-zpagn F1 and F2, escaped from
+// ranger-base-5pkix). This repository keeps three EXTENSIONLESS bash programs
+// under scripts/ — the landing gate, the post-landing judge and the wall
+// check — so an extension test read 64 of the 67 tracked programs there and
+// could not see any of them. MEASURED 2026-11-23, a never-called function
+// carrying the first verb `pkUnquotedKills` names planted in
+// scripts/posse-wall-check and then in scripts/posse-land-check: both sweeps
+// GREEN, where the same line in scripts/park-carriers.sh reds them.
+//
+// The reading is tsIsShell (trapstatepick_qa_test.go) and NOT a third copy of
+// it. This package already carries two — tsIsShell and pnsIsProgram — and a
+// sweep whose corpus disagrees with the package's own idea of a shell program
+// is how this hole arrived in the first place.
+//
+// Only an extensionless path is opened to ask: a path carrying an extension
+// has declared what it is, and the tracked tree is 2292 files, which is 2292
+// reads to learn what the suffix already said.
+func pkTrackedShellPrograms(t *testing.T, withMakefile bool) (paths []string, byShebang int) {
+	t.Helper()
 	out, err := exec.Command("git", "ls-files", "-z").Output()
 	if err != nil {
-		t.Fatalf("git ls-files: %v — this pin needs the checkout to name what posse ships", err)
+		t.Fatalf("git ls-files: %v — this corpus needs the checkout to name what posse ships", err)
 	}
 	tracked := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
 	if len(tracked) < 100 {
-		t.Fatalf("git tracks %d files — the listing failed, so a clean result here is not evidence", len(tracked))
+		t.Fatalf("git tracks %d files — the listing failed, so a clean result over it is not evidence", len(tracked))
 	}
-
-	var scanned int
-	var hits []string
 	for _, rel := range tracked {
 		if rel == "" {
 			continue
 		}
-		if !strings.HasSuffix(rel, ".sh") && filepath.Base(rel) != "Makefile" {
+		if withMakefile && filepath.Base(rel) == "Makefile" {
+			paths = append(paths, rel)
+			continue
+		}
+		if tsIsShell(rel, nil) { // the extension alone, which needs no read
+			paths = append(paths, rel)
+			continue
+		}
+		if filepath.Ext(rel) != "" {
 			continue
 		}
 		b, err := os.ReadFile(filepath.FromSlash(rel))
 		if err != nil {
 			t.Fatalf("read %s: %v", rel, err)
 		}
-		scanned++
+		if tsIsShell(rel, b) {
+			paths = append(paths, rel)
+			byShebang++
+		}
+	}
+	return paths, byShebang
+}
+
+// pkShebangFloor is the floor both sweeps put on pkTrackedShellPrograms'
+// second return. One, not three: three extensionless bash programs is what
+// the tree holds today, but a rename of any of them to `.sh` is ordinary work
+// and must not red a pin whose subject is pattern kills. Zero is the defect —
+// it is the corpus narrowed back to an extension test, which is the only way
+// this number moves to zero.
+const pkShebangFloor = 1
+
+// TestNoShippedShellScriptCallsAPatternKill sweeps what posse ships. The
+// ruling is crew-wide and its realization is a PATH shim, so a `pkill` left in
+// a script is not a style question: it is a call that will be refused, into a
+// `2>/dev/null`, with the arm above it reporting whatever the un-reaped
+// process makes true.
+func TestNoShippedShellScriptCallsAPatternKill(t *testing.T) {
+	corpus, byShebang := pkTrackedShellPrograms(t, true)
+
+	var hits []string
+	for _, rel := range corpus {
+		b, err := os.ReadFile(filepath.FromSlash(rel))
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
 		for i, line := range strings.Split(string(b), "\n") {
 			if verbs := pkUnquotedKills(line); len(verbs) > 0 {
 				hits = append(hits, fmt.Sprintf("%s:%d: %s → %s", rel, i+1, strings.TrimSpace(line), verbs))
@@ -235,13 +290,20 @@ func TestNoShippedShellScriptCallsAPatternKill(t *testing.T) {
 	}
 	// The floor is the positive witness: a glob that matched nothing would
 	// leave hits empty and this test green over a sweep of no files at all.
-	// 38 tracked .sh files plus the Makefile at the time of writing. A floor
-	// this close to the census also catches the sweep silently NARROWING —
-	// a suffix test or a path filter that quietly stops seeing most of the
-	// tree, which reads exactly like a clean result.
-	if scanned < 30 {
+	// 39 tracked .sh files plus three extensionless bash programs plus the
+	// Makefile at the time of writing. A floor this close to the census also
+	// catches the sweep silently NARROWING — a suffix test or a path filter
+	// that quietly stops seeing most of the tree, which reads exactly like a
+	// clean result.
+	if len(corpus) < 30 {
 		t.Fatalf("only %d shell files swept in the whole tracked tree — the sweep is not "+
-			"finding them, so a clean result measures nothing", scanned)
+			"finding them, so a clean result measures nothing", len(corpus))
+	}
+	if byShebang < pkShebangFloor {
+		t.Fatalf("the sweep read %d program(s) whose shebang is what said it was shell, want at least %d — "+
+			"the corpus has narrowed back to an extension test, so the three extensionless bash programs "+
+			"under scripts/ are swept by nothing and a pattern kill typed in any of them is invisible to "+
+			"the pin whose whole subject is that it never happens (ranger-base-zpagn F1)", byShebang, pkShebangFloor)
 	}
 	if len(hits) > 0 {
 		t.Fatalf("a shipped script calls a pattern kill, which every crew seat refuses "+
@@ -1079,14 +1141,16 @@ func TestTheReapingScriptsKeepTheirGroupShape(t *testing.T) {
 	// building for it. What covers the new script is
 	// TestNoShippedShellScriptCallsAPatternKill above, which catches the
 	// spelling the defect actually arrives in.
-	out, err := exec.Command("git", "ls-files", "-z").Output()
-	if err != nil {
-		t.Fatalf("git ls-files: %v", err)
+	corpus, byShebang := pkTrackedShellPrograms(t, false)
+	if byShebang < pkShebangFloor {
+		t.Fatalf("the stray sweep read %d program(s) whose shebang is what said it was shell, want at "+
+			"least %d — the corpus has narrowed back to an extension test and the three extensionless bash "+
+			"programs under scripts/ are read by nothing (ranger-base-zpagn F1)", byShebang, pkShebangFloor)
 	}
 	named := map[string]bool{want[0]: true, want[1]: true}
 	var strays []string
-	for _, rel := range strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00") {
-		if rel == "" || !strings.HasSuffix(rel, ".sh") || named[rel] {
+	for _, rel := range corpus {
+		if named[rel] {
 			continue
 		}
 		b, err := os.ReadFile(filepath.FromSlash(rel))
