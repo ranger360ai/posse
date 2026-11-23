@@ -131,7 +131,24 @@ func (d *Dispatcher) autoReapPass(when reapWhen) {
 		// 41.6h in silence (reapworking.go, ranger-base-4yefx). It is an
 		// INPUT to reapWhy now, judged where "the work is finished" is
 		// already known — and where the bead has been read exactly once.
-		why, ok := d.reapWhy(s, class, pol, d.settledForReap(s))
+		//
+		// An unsettled session that NO arm could take still falls out here
+		// rather than inside reapWhy, and that is a cost decision with a
+		// behaviour in it. reapWhy's first act is a `bd show`, and it
+		// PRINTS when that read fails (ranger-base-fytno's line) — so
+		// letting every blocked or agentless session through would add a
+		// store read per session per sweep and, on a store having a bad
+		// minute, a line about sessions no arm was ever going to take. What
+		// does pay the read is the one shape the new arm can act on: a
+		// fleet session reading `working`. For an OPEN bead that read buys
+		// nothing and cannot be avoided — "is the work finished" is a
+		// question only the store can answer — and it is one read per live
+		// seat per sweep, which is the price of the arm.
+		settled := d.settledForReap(s)
+		if !settled && !workingSeatWorthAStoreRead(s, class) {
+			continue
+		}
+		why, ok := d.reapWhy(s, class, pol, settled)
 		if !ok {
 			continue
 		}

@@ -225,6 +225,34 @@ func TestAutoReapWorkingDoesNotTakeABlockedSeat(t *testing.T) {
 	}
 }
 
+// The cost decision with a behaviour in it (autoreap.go): an unsettled
+// session no arm could take must not reach reapWhy at all, because reapWhy
+// opens with a `bd show` and SAYS so when that read fails
+// (ranger-base-fytno's line). Before the pre-gate, a store having a bad
+// minute would have produced that line on every pass for every blocked or
+// agentless session — sessions no arm was ever going to take.
+func TestAutoReapWorkingDoesNotReadTheStoreForASeatNoArmCanTake(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	d := newTestDispatcher(t, b)
+	writePersona(t, b.App, "ranger", "[go]")
+	dir := t.TempDir()
+	name := SessionForBead("ranger", dir, "a-1")
+	// No fake-show.json: this session's bead cannot be read at all.
+	residueSession(t, b, NewSessionOpts{Name: name, Dir: dir, Bead: "a-1"}, "", DefaultWorkingReapAfter+time.Hour)
+	write(t, filepath.Join(fake, "agents.json"),
+		`[{"agent":"claude","agent_status":"blocked","pane_id":"w1:p1","workspace_id":"w1"}]`)
+
+	d.autoReapPass(afterRouting)
+
+	if _, ok := b.readMeta(name); !ok {
+		t.Fatalf("a blocked seat was reaped:\n%s", dispatcherOut(d))
+	}
+	if out := dispatcherOut(d); strings.Contains(out, "cannot be read") {
+		t.Errorf("the sweep read the store for a session no arm can take, and said so — that line is for candidates, not for every blocked seat on the box:\n%s", out)
+	}
+}
+
 // And the crew mark: a seat the operator stepped into reads `working` the
 // same way, and it is not this arm's. It reaches reapCrewClosed, pays four
 // hours, and is refused here whatever its screen says — a screen reading is

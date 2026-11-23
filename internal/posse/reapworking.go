@@ -101,6 +101,16 @@ import (
 // would have taken it on the first sweep past the close.
 const DefaultWorkingReapAfter = time.Hour
 
+// workingSeatWorthAStoreRead is the one shape that pays for the `bd show`
+// reapWhy opens with: the class and the state the arm below can act on. It is
+// asked in the sweep, before that read, and it is deliberately the same two
+// questions the arm asks again afterwards — the sweep's copy is about COST and
+// the arm's is about correctness, and an arm that trusted its caller to have
+// filtered would be one call away from acting on a population nobody checked.
+func workingSeatWorthAStoreRead(s HerdrSession, class reapClass) bool {
+	return class == reapFleetClosed && s.Status == "working"
+}
+
 // mayReapWorkingSeat is the arm: whether a session the occupant calls
 // `working`, whose bead the store of record calls CLOSED, may be reaped
 // anyway. It appends its own clause to `why` so the reap line says which
