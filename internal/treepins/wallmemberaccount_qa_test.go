@@ -147,6 +147,67 @@ package treepins
 // bgSeatAccount each reds the arm that owns it; and the four deferred messages
 // folded onto one line red the witness floor and nothing else.
 //
+// THE FOURTH ROUTE IS A PARAMETER (ranger-base-x1ofd, from ranger-base-dxaxt's
+// reading of the key while it added arm 6). The key read three routes and the
+// member set used four: an account that arrives as a PARAMETER of the function
+// that renders it is bound by no `:=` anywhere, and both local maps record only
+// locals ASSIGNED from something, so neither could ever hold a parameter name.
+// The site is internal/posse/bwrapgitrefslive_test.go's bgSeatAbstainAccount —
+// the one spelling of ADR 0097 D3's exit 3, whose `t.Skipf("NOTHING MEASURED:
+// %s — %s. …", account, what)` renders its own second parameter — and it was
+// graded by nothing at all, by arm 2 or by arm 6. That is ranger-base-momix's
+// shape one route further on, and D3 reads an abstention's line with the same
+// rule as a failure's (evidence()'s own docstring says so), so an abstention's
+// account is spent out of the same 300.
+//
+// MEASURED 2026-11-22 (linux 7.2.15-1-omarchy, go1.27.3) at 814776ed with the
+// route added: 24 member files, 8 carrying an account, 66 account messages —
+// 32 runner local, 8 folded local, 25 inline fold, and ONE parameter, which is
+// bgSeatAbstainAccount's line and nothing else. Arm 2's per-route floors gain
+// a row for it and arm 6 grades it as the 66th of 66. The route is read at the
+// CALL SITE (wmaParamAccounts): a call of a function declared in the same
+// file, whose argument at position i is an account by one of the three routes
+// above, makes that function's i-th parameter an account. Nothing keys on the
+// name `account`, and the parameter's declared type must be `string`, which is
+// what an account is by construction — without that the route propagated one
+// existing over-read a hop further, binding wallwatchlive_test.go's int `code`
+// because the same file folds an account into a local named `got` and that name
+// is also its watcher's exit code.
+//
+// AND ITS PREFIX IS ALREADY CHARGED HONESTLY, which is why this route lands
+// with no arithmetic of its own. That message IS rendered inside a t.Helper()
+// — bgSeatAbstainAccount's whole chain is, with 52 call sites at this tip
+// (MEASURED 2026-11-22 at 814776ed) — so it is the NINTH of the nine messages
+// the paragraph below charges `wallwatchbackstopwiring_linux_test.go:NNNN: `
+// (44) for the caller `go test` prints. ranger-base-x1ofd decided that reading
+// for this one message and ranger-base-q41e8 landed it for the other eight
+// before the route arrived, so the 14-character under-read x1ofd priced
+// against it — 30 charged where 44 is honest — exists in this tree nowhere.
+// MEASURED at this tip: 44 of prefix plus 18 of literal preamble is a head of
+// 62, the NARROWEST of the nine (the rest run 91 to 124) against the 267 a
+// 33-character account leaves, and the widest head over the whole set is 209
+// at internal/posse/bwrapgitrefslive_test.go:624 — the same figure and the
+// same line as before this route landed. The route moves no headroom.
+//
+// AND THE BOTH-WAYS READING, seven mutants one at a time (MEASURED 2026-11-22
+// at 814776ed, docs/notes.d/ranger-base-x1ofd.md carries the battery and its
+// output): the unmutated arms green; the route dropped from wmaAccountArg reds
+// the parameter floor and arm 3's two positive rows, and arm 2 then reads the
+// 65 this tree read without it; the string-type reading dropped reds arm 3's
+// non-string row AND its variadic row, and NOTHING over the tree, which is why
+// the narrowing is held hermetically and why a variadic bail of its own is not
+// in wmaParamAt; the blank reading dropped reds the blank row; one hop widened
+// to two reds the second-hop row — in ONE of its two source orders, which is
+// why there are two of them; the graded line's own account moved behind a
+// newline reds arm 2 at bwrapgitrefslive_test.go:485, while the SAME mutation
+// with the route dropped again reds that line nowhere, which is what the route
+// is for — the line could have lost its account to a newline at any time and
+// the census would have said nothing. The seventh is this landing's own:
+// wmaRenderedInHelper answering "not a helper" everywhere reds arm 7's five
+// readings with arm 6 GREEN, so the 66th message does not make this tree
+// witness the prefix term either, and the term stays where
+// ranger-base-q41e8's mutant 8 put it.
+//
 // AND THE OTHER HALF OF ranger-base-mklu0 IS ARM 6: the 300 characters.
 // evidence() truncates that first line with the `file.go:NN: ` prefix inside
 // the 300, so an account that is on line 1 but behind a long preamble is cut
@@ -718,18 +779,125 @@ func wmaFoldLocals(f wmaFile) map[string]bool {
 	return locals
 }
 
+// wmaParamAt names the parameter at the 0-based ARGUMENT position i, with a
+// grouped list flattened the way it is written: `what, account string` is two
+// parameters and not one, which is the spelling the site this route exists
+// for actually uses. An unnamed or blank parameter answers "", because it
+// binds nothing a message could read.
+//
+// IT ANSWERS "" FOR A PARAMETER THAT IS NOT A `string`, which is a
+// narrowing and was MEASURED to be the one the tree needed (2026-11-22, linux
+// 7.2.15-1-omarchy, go1.27.3, at 79b7bf11). An account is a string by
+// construction — bgSeatAccount and wwOneLine both return one — so a parameter
+// of any other type cannot be holding one, and the type is read off the
+// declaration rather than guessed from the name. Without it this route bound
+// wallwatchlive_test.go's `code`, an int: the three routes above are file-wide
+// NAME sets, that file folds an account into a local named `got`, and the same
+// name is its watcher's exit code at `wwSeatAccount(got, said)` — so a
+// name-only reading propagates that one over-read a hop further, into a
+// parameter no account can reach. The route reads the one site either way; the
+// type is what keeps it from reading more than it can defend.
+//
+// THE SAME READING ANSWERS A VARIADIC, and there is no second branch for one:
+// a `...string` parameter's type is an *ast.Ellipsis and not an Ident, so the
+// line below already refuses it — what is bound there is a slice and not the
+// account. A bail of its own stood here and was taken out when the mutant for
+// it reddened nothing (ranger-base-x1ofd), which is this file's own rule about
+// a guard nothing witnesses (see the head comment on the wrapper ceiling,
+// ranger-base-8752f). Arm 3 carries the variadic row, and it reds under the
+// mutant that drops this one line.
+func wmaParamAt(fn *ast.FuncDecl, i int) string {
+	if fn.Type.Params == nil {
+		return ""
+	}
+	at := 0
+	for _, p := range fn.Type.Params.List {
+		n := len(p.Names)
+		if n == 0 {
+			n = 1
+		}
+		for k := 0; k < n; k++ {
+			if at == i {
+				if id, ok := p.Type.(*ast.Ident); !ok || id.Name != "string" {
+					return ""
+				}
+				if len(p.Names) == 0 || p.Names[k].Name == "_" {
+					return ""
+				}
+				return p.Names[k].Name
+			}
+			at++
+		}
+	}
+	return ""
+}
+
+// wmaParamAccounts are the PARAMETER names this file hands an account to —
+// the fourth route, and the one the key read not at all (ranger-base-x1ofd).
+// The two local maps record only locals ASSIGNED from something, so neither
+// ever holds a parameter name, and the route the member set reaches
+// bgSeatAbstainAccount's NOTHING MEASURED line by was graded by nothing.
+//
+// It is read at the CALL SITE and not off the parameter's name: a call of a
+// function declared in this file, whose argument at position i is an account
+// by one of the three routes above, makes that function's i-th parameter an
+// account. Nothing here keys on `account`, `acct` or any other spelling —
+// which is the same reason wmaMemberPattern reads the check instead of
+// retyping it.
+//
+// ONE HOP, the same depth as every other reading in this file, and the param
+// map is deliberately nil in the recursive position below: an account that
+// reaches a parameter FROM another parameter is two hops and is not read. That
+// also makes this reading independent of the order the walk meets the call
+// sites in — with the fourth route fed back in, a two-hop chain would bind or
+// not depending on which call ast.Inspect reached first. The floors in arm 2
+// are what notice a route going quiet.
+func wmaParamAccounts(f wmaFile, runner, folded map[string]bool) map[string]bool {
+	params := map[string]bool{}
+	decls := wmaDecls(f.ast)
+	ast.Inspect(f.ast, func(n ast.Node) bool {
+		c, ok := n.(*ast.CallExpr)
+		// A spread reorders nothing but hides which parameter each argument
+		// lands in, which is arm 2's own reason for refusing to guess.
+		if !ok || c.Ellipsis.IsValid() {
+			return true
+		}
+		callee := wmaCallee(c)
+		if callee == "" {
+			return true
+		}
+		for i, a := range c.Args {
+			if _, _, isAccount := wmaAccountArg(a, runner, folded, nil); !isAccount {
+				continue
+			}
+			for _, fn := range decls {
+				if fn.Name.Name != callee {
+					continue
+				}
+				if name := wmaParamAt(fn, i); name != "" {
+					params[name] = true
+				}
+			}
+		}
+		return true
+	})
+	return params
+}
+
 // wmaAccountArg reports whether one argument of a format call IS a seat's
-// account, and by which route — which is the whole of arm 2's key. The three
+// account, and by which route — which is the whole of arm 2's key. The four
 // routes are kept apart so arm 2 can floor each of them: a route that has
 // gone quiet is a route a later narrowing could delete while the census stays
 // green, which is ranger-base-hhps5's lesson one arm over.
-func wmaAccountArg(x ast.Expr, runner, folded map[string]bool) (name, route string, ok bool) {
+func wmaAccountArg(x ast.Expr, runner, folded, param map[string]bool) (name, route string, ok bool) {
 	if id, isID := x.(*ast.Ident); isID {
 		switch {
 		case runner[id.Name]:
 			return id.Name, "runner local", true
 		case folded[id.Name]:
 			return id.Name, "folded local", true
+		case param[id.Name]:
+			return id.Name, "parameter", true
 		}
 		return "", "", false
 	}
@@ -801,8 +969,15 @@ type wmaMsg struct {
 // with one layer down — it hid wallunixlive_test.go's three deferred-prose
 // messages, which are three quarters of what witnesses arm 2's rule
 // (ranger-base-momix).
+//
+// AND THE FOURTH ROUTE IS READ HERE, in the one place, which is why that
+// register matters (ranger-base-x1ofd): an account handed to a function as a
+// PARAMETER is bound by no `:=` anywhere, so neither local map can hold it,
+// and it reached the key not at all. Both arms read it the moment this walk
+// does.
 func wmaAccountMessages(f wmaFile) []wmaMsg {
 	runner, folded := wmaAccountLocals(f), wmaFoldLocals(f)
+	param := wmaParamAccounts(f, runner, folded)
 	spans := wmaFuncSpans(f.ast)
 	var out []wmaMsg
 	ast.Inspect(f.ast, func(n ast.Node) bool {
@@ -820,7 +995,7 @@ func wmaAccountMessages(f wmaFile) []wmaMsg {
 		}
 		helper, helperIn := wmaRenderedInHelper(spans, c.Pos())
 		for i, a := range c.Args[1:] {
-			name, route, isAccount := wmaAccountArg(a, runner, folded)
+			name, route, isAccount := wmaAccountArg(a, runner, folded, param)
 			if !isAccount {
 				continue
 			}
@@ -943,7 +1118,10 @@ func wmaSpentBefore(firstLine string, argIdx int) (spent int, ok bool) {
 // wmaRenderedInHelper is which case a message is and wmaHelperPrefix is the
 // other one's charge (ranger-base-q41e8). This docstring said "nothing arm 6
 // grades is in such a helper today" until that bead measured it: eight of the
-// 65 did, and the head comment names them.
+// 65 did, and the head comment names them. NINE of 66 do since
+// ranger-base-x1ofd's fourth route, whose one message is itself rendered
+// inside a t.Helper() — it is the narrowest head of the nine, MEASURED
+// 2026-11-22 at 814776ed, and the arm's own Logf prints the count.
 //
 // It is a named reader and not two lines inside arm 6 because this tree does
 // not witness it: MEASURED 2026-11-22 (mutant 8 of docs/notes.d/
@@ -1374,16 +1552,23 @@ func TestQAEveryWallMemberMessageCarriesItsSeatAccountOnTheFirstLine(t *testing.
 		t.Errorf("this arm found seat accounts in %d member file(s), want at least 6 (8 on 2026-11-22: bwrapgitrefslive_test.go, bwrapseatstorelive_test.go, storerepogitwalllive_test.go, wallclaudeprojects_qa_test.go, wallclaudeprojectsattack_qa_test.go, wallunixlive_test.go, wallwatchbackstopwiring_linux_test.go and wallwatchlive_test.go — 3 of them under the key before ranger-base-momix widened it) — the shapes this arm reads have changed and it is grading almost nothing", withAccounts)
 	}
 	if read < 45 {
-		t.Errorf("this arm read %d message(s) interpolating a seat account, want at least 45 (65 on 2026-11-22, of which 32 were all the key read before ranger-base-momix) — an account reaches a reader by some route this arm cannot see", read)
+		t.Errorf("this arm read %d message(s) interpolating a seat account, want at least 45 (66 on 2026-11-22, of which 32 were all the key read before ranger-base-momix and 65 all it read before ranger-base-x1ofd) — an account reaches a reader by some route this arm cannot see", read)
 	}
 	// AND A FLOOR PER ROUTE, for the reason arm 1 floors the wrapper route
-	// (ranger-base-hhps5): a key that reads three spellings and finds two of
-	// them in the tree is a key whose third arm a later narrowing could
+	// (ranger-base-hhps5): a key that reads four spellings and finds three of
+	// them in the tree is a key whose fourth arm a later narrowing could
 	// delete with every arm here still green. An account this census cannot
 	// see does not lower the count of the ones it can.
-	for _, route := range []string{"runner local", "folded local", "inline fold"} {
+	//
+	// THE PARAMETER ROW IS A FLOOR OF ONE AND THAT IS THE WHOLE POINT
+	// (ranger-base-x1ofd). It is the thinnest row here — one message, in one
+	// file — and it is the row that went ungraded longest: the key read three
+	// routes while the member set used four, so nothing held
+	// bgSeatAbstainAccount's NOTHING MEASURED line anywhere. A route with one
+	// witness is exactly the route a narrowing deletes for free.
+	for _, route := range []string{"runner local", "folded local", "inline fold", "parameter"} {
 		if routes[route] == 0 {
-			t.Errorf("this arm read 0 account(s) by the %q route, want at least 1 (on 2026-11-22: 32 runner local, 8 folded local, 25 inline fold). That route is in the key because the member set used it — the folded routes are ranger-base-momix's, which is how wallclaudeprojectsattack_qa_test.go came to be graded by nothing after this class had been found in it twice. If the spelling really has gone from the tree, say so and take the route out of wmaAccountArg; do not leave an arm of the key with nothing witnessing it.", route)
+			t.Errorf("this arm read 0 account(s) by the %q route, want at least 1 (on 2026-11-22: 32 runner local, 8 folded local, 25 inline fold, 1 parameter). That route is in the key because the member set used it — the folded routes are ranger-base-momix's, which is how wallclaudeprojectsattack_qa_test.go came to be graded by nothing after this class had been found in it twice, and the parameter route is ranger-base-x1ofd's, which is how bgSeatAbstainAccount's abstention line came to be graded by nothing at all. If the spelling really has gone from the tree, say so and take the route out of wmaAccountArg; do not leave an arm of the key with nothing witnessing it.", route)
 		}
 	}
 	// THE WITNESS FOR THE RULE ITSELF. The rule above is POSITIONAL, and the
@@ -1396,8 +1581,8 @@ func TestQAEveryWallMemberMessageCarriesItsSeatAccountOnTheFirstLine(t *testing.
 	if deferred == 0 {
 		t.Errorf("this arm read %d account message(s) that defer their prose to a second line, want at least 1 (4 on 2026-11-22: wallclaudeprojectsattack_qa_test.go:386 and wallunixlive_test.go:237, :526, :1130). Those four are what distinguish this arm's rule from `no newline at all`; with none of them in the tree, nothing here witnesses that the rule is positional and arm 3's planted rows are the whole of it.", deferred)
 	}
-	t.Logf("%d member file(s), %d of them carrying a seat account, %d account message(s) read (%d by a runner local, %d by a folded local, %d by an inline fold), %d of which defer prose to a second line with the account in front of it.",
-		len(files), withAccounts, read, routes["runner local"], routes["folded local"], routes["inline fold"], deferred)
+	t.Logf("%d member file(s), %d of them carrying a seat account, %d account message(s) read (%d by a runner local, %d by a folded local, %d by an inline fold, %d by a parameter), %d of which defer prose to a second line with the account in front of it.",
+		len(files), withAccounts, read, routes["runner local"], routes["folded local"], routes["inline fold"], routes["parameter"], deferred)
 }
 
 // ARM 3 — THE RULES SAY NO. Both rules driven over planted source, each with
@@ -1636,7 +1821,7 @@ func TestX(t *testing.T) { ok, acct := f.in(t); _, _ = ok, acct }`, nil},
 					return true
 				}
 				for _, a := range call.Args[1:] {
-					_, _, is := wmaAccountArg(a, runner, got)
+					_, _, is := wmaAccountArg(a, runner, got, nil)
 					isAccount = append(isAccount, is)
 				}
 				return true
@@ -1647,6 +1832,110 @@ func TestX(t *testing.T) { ok, acct := f.in(t); _, _ = ok, acct }`, nil},
 			for i := range c.arg {
 				if isAccount[i] != c.arg[i] {
 					t.Errorf("wmaAccountArg says argument %d is an account = %v, want %v — arm 2's key no longer means what this file says it means:\n%s", i, isAccount[i], c.arg[i], c.src)
+				}
+			}
+		})
+	}
+
+	// And arm 2's FOURTH route, which is ranger-base-x1ofd's: the account
+	// arrives as a PARAMETER of the function that renders it, bound by no `:=`
+	// anywhere, so neither local map can hold it. The first row is the site
+	// the route exists for — bgSeatAbstainAccount's shape, a grouped
+	// `what, account string` list whose account comes from an inline fold at
+	// the call site — and the negatives are what keep the route from reading
+	// a position no account reaches: the `what` beside it, a parameter the
+	// call site hands something else, a variadic, a blank, a non-string, and
+	// the second hop.
+	for _, c := range []struct {
+		name  string
+		src   string
+		param []string
+		arg   []bool
+	}{
+		{"the account parameter of an abstention, from an inline fold at the call site", `func abstain(t *testing.T, what, account string) {
+	t.Skipf("NOTHING MEASURED: %s — %s. the seat was ended from outside", what, account)
+}
+func TestX(t *testing.T) { abstain(t, "a seat running git", bgSeatAccount(err, out)) }`, []string{"account"}, []bool{false, true}},
+		{"the account parameter, from a folded local at the call site", `func say(t *testing.T, account string) {
+	t.Fatalf("the seat ended badly: %s", account)
+}
+func TestX(t *testing.T) {
+	acct := wwOneLine(out)
+	say(t, acct)
+}`, []string{"account"}, []bool{true}},
+		{"a parameter the call site hands something that is not an account", `func say(t *testing.T, msg string) {
+	t.Fatalf("the seat said: %s", msg)
+}
+func TestX(t *testing.T) { say(t, strings.TrimSpace(string(raw))) }`, nil, []bool{false}},
+		{"a variadic parameter binds nothing", `func say(t *testing.T, parts ...string) {
+	t.Fatalf("the seat said: %s", parts)
+}
+func TestX(t *testing.T) { say(t, bgSeatAccount(err, out)) }`, nil, []bool{false}},
+		{"a blank parameter binds nothing", `func say(t *testing.T, _ string) {
+	t.Fatalf("the seat said something this function cannot read: %s", elsewhere)
+}
+func TestX(t *testing.T) { say(t, bgSeatAccount(err, out)) }`, nil, []bool{false}},
+		{"a parameter that is not a string cannot be holding an account", `func say(t *testing.T, code int) {
+	t.Fatalf("the seat ended: %s", code)
+}
+func TestX(t *testing.T) {
+	got := wwOneLine(out)
+	say(t, got)
+}`, nil, []bool{false}},
+		// THE SECOND HOP, IN BOTH SOURCE ORDERS, and the orders are the row
+		// (ranger-base-x1ofd). Fed back into its own reading the route stops
+		// being one hop and starts being a fixpoint reached in walk order: the
+		// mutant that feeds the param map back in reds the first of these two
+		// rows and NOT the second, because with the inner call written first
+		// ast.Inspect meets it before anything has bound the outer parameter.
+		// One row would have left the one-hop rule witnessed by nothing — it
+		// did, until this battery was run.
+		{"an account two hops from the fold is not read, the outer call first", `func TestX(t *testing.T) { outer(t, bgSeatAccount(err, out)) }
+func outer(t *testing.T, acct string) { inner(t, acct) }
+func inner(t *testing.T, account string) {
+	t.Fatalf("the seat ended badly: %s", account)
+}`, []string{"acct"}, []bool{false}},
+		{"an account two hops from the fold is not read, the inner call first", `func inner(t *testing.T, account string) {
+	t.Fatalf("the seat ended badly: %s", account)
+}
+func outer(t *testing.T, acct string) { inner(t, acct) }
+func TestX(t *testing.T) { outer(t, bgSeatAccount(err, out)) }`, []string{"acct"}, []bool{false}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, f := wmaFixture(t, c.src, "")
+			runner, folded := wmaAccountLocals(f), wmaFoldLocals(f)
+			got := wmaParamAccounts(f, runner, folded)
+			if len(got) != len(c.param) {
+				t.Fatalf("wmaParamAccounts found %v, want %v — arm 2's parameter route no longer binds what this file says it binds:\n%s", got, c.param, c.src)
+			}
+			for _, w := range c.param {
+				if !got[w] {
+					t.Errorf("wmaParamAccounts found %v, want it to name %q:\n%s", got, w, c.src)
+				}
+			}
+			// And the per-argument reading, which is what arm 2 keys on.
+			var isAccount []bool
+			ast.Inspect(f.ast, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok || len(call.Args) < 2 {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || !wmaFormatVerbs[sel.Sel.Name] {
+					return true
+				}
+				for _, a := range call.Args[1:] {
+					_, _, is := wmaAccountArg(a, runner, folded, got)
+					isAccount = append(isAccount, is)
+				}
+				return true
+			})
+			if len(isAccount) != len(c.arg) {
+				t.Fatalf("wmaAccountArg read %d format argument(s), want %d:\n%s", len(isAccount), len(c.arg), c.src)
+			}
+			for i := range c.arg {
+				if isAccount[i] != c.arg[i] {
+					t.Errorf("wmaAccountArg says argument %d is an account = %v, want %v — arm 2's parameter route no longer means what this file says it means:\n%s", i, isAccount[i], c.arg[i], c.src)
 				}
 			}
 		})
@@ -1919,11 +2208,12 @@ func TestQAEveryWallMemberAccountFitsInsideTheEvidenceBudget(t *testing.T) {
 	// messages arm 2 reports — an account behind the newline, or behind a verb
 	// this census will not position — so the two counts need not be the same
 	// number, and a drop that swallowed the set would show here and not there.
-	// They ARE the same number today (65 on 2026-11-22: every account in the
-	// member set is on the first line, which is arm 2's green said the other
-	// way round) and this floor does not assume they stay that way.
+	// They ARE the same number today (66 on 2026-11-22, 65 before
+	// ranger-base-x1ofd's fourth route: every account in the member set is on
+	// the first line, which is arm 2's green said the other way round) and
+	// this floor does not assume they stay that way.
 	if graded < 45 {
-		t.Errorf("this arm graded %d account message(s) against the %d-character budget, want at least 45 (65 on 2026-11-22, the whole of what arm 2 reads). An account reaches a reader by some route this arm no longer reads, or every account in the set has moved somewhere this arm declines to measure — and arm 2's own report is what says which.", graded, budget)
+		t.Errorf("this arm graded %d account message(s) against the %d-character budget, want at least 45 (66 on 2026-11-22, the whole of what arm 2 reads). An account reaches a reader by some route this arm no longer reads, or every account in the set has moved somewhere this arm declines to measure — and arm 2's own report is what says which.", graded, budget)
 	}
 	// THE HELPER-RENDERED COUNT IS LOGGED AND NOT FLOORED, which is the one
 	// place this arm departs from arm 2's register and does so on arm 3's
@@ -1931,8 +2221,9 @@ func TestQAEveryWallMemberAccountFitsInsideTheEvidenceBudget(t *testing.T) {
 	// set whose helpers all grew their own messages would red it while every
 	// line still fitted — and the term it would be protecting is held
 	// hermetically in arm 7 instead, where a reading that stopped recognising
-	// a helper reds over planted source with no member set at all. 8 of 65 on
-	// 2026-11-22.
+	// a helper reds over planted source with no member set at all. 9 of 66 on
+	// 2026-11-22, the ninth being ranger-base-x1ofd's parameter-route message,
+	// which was 8 of 65 before that route landed.
 	t.Logf("%d member file(s), %d account message(s) graded against %s's %d characters, %d of them rendered inside a t.Helper() and charged `%s:%s: ` (%d) for the caller go test prints instead of their own position; the account itself needs %d (%s), leaving a message %d; the widest head (prefix + literal preamble) is %d at %s.",
 		len(files), graded, wmaCheck, budget, inHelper, widestBase, strings.Repeat("N", wmaHelperLineDigits), wmaHelperPrefix(widestBase), account, how, budget-account, widest, widestAt)
 }
