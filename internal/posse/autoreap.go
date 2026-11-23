@@ -125,10 +125,13 @@ func (d *Dispatcher) autoReapPass(when reapWhen) {
 		if _, recent := d.promptedRecently(s.Name); recent {
 			continue
 		}
-		if !d.settledForReap(s) {
-			continue
-		}
-		why, ok := d.reapWhy(s, class, pol)
+		// settledForReap is no longer the gate it was: a `working` reading
+		// over a bead the store of record calls CLOSED is not evidence that
+		// somebody is in there, and reading it as one held one lane for
+		// 41.6h in silence (reapworking.go, ranger-base-4yefx). It is an
+		// INPUT to reapWhy now, judged where "the work is finished" is
+		// already known — and where the bead has been read exactly once.
+		why, ok := d.reapWhy(s, class, pol, d.settledForReap(s))
 		if !ok {
 			continue
 		}
@@ -404,6 +407,7 @@ const (
 type reapPolicy struct {
 	crew      time.Duration // 0 = the crew arm is off
 	unpointed time.Duration // 0 = the unpointed arm is off (see reapClassOf)
+	working   time.Duration // 0 = the `working`-over-a-closed-bead arm is off (reapworking.go)
 	pulse     string        // the persona ADR 0027's pulse delivers to ("" = none)
 	when      reapWhen
 }
@@ -416,6 +420,7 @@ func (d *Dispatcher) reapPolicy(when reapWhen) reapPolicy {
 		// writer is the same bare write as an fmt.Fprintf, one call deep.
 		crew:      d.App.graceAfter("reap_crew_after", DefaultCrewReapAfter, d.errWriter()),
 		unpointed: d.App.graceAfter("reap_unpointed_after", DefaultUnpointedReapAfter, d.errWriter()),
+		working:   d.App.graceAfter("reap_working_after", DefaultWorkingReapAfter, d.errWriter()),
 		pulse:     pulsePersona(d.App),
 		when:      when,
 	}
@@ -503,7 +508,7 @@ func reapClassOf(s HerdrSession, pol reapPolicy) reapClass {
 // gathered results: `--resume` can close a bead between one pass's gather and
 // this epilogue, and a cached status would disagree with the store it is
 // supposed to defer to (ADR 0011).
-func (d *Dispatcher) reapWhy(s HerdrSession, class reapClass, pol reapPolicy) (string, bool) {
+func (d *Dispatcher) reapWhy(s HerdrSession, class reapClass, pol reapPolicy, settled bool) (string, bool) {
 	var why string
 	switch class {
 	case reapFleetClosed, reapCrewClosed:
@@ -534,9 +539,25 @@ func (d *Dispatcher) reapWhy(s HerdrSession, class reapClass, pol reapPolicy) (s
 			return "", false
 		}
 		why = "bead " + s.Bead + " closed"
+		// The one place a seat the occupant calls `working` can still be
+		// taken, and only with the whole of reapworking.go's conjunction
+		// behind it: this bead is CLOSED, so there is no turn left to judge
+		// and nothing to decide but whether the workspace may go. Every
+		// other unsettled seat returns here exactly as it did before, and
+		// the arm prints its own line on every pass it declines.
+		if !settled && !d.mayReapWorkingSeat(s, class, pol, &why) {
+			return "", false
+		}
 	case reapUnpointed:
 		// Nothing to ask: the pointer is what makes a store askable, and
-		// this population is defined by not having one.
+		// this population is defined by not having one — so nothing here
+		// can say the work is finished, and an unsettled seat in this
+		// population is refused as it always was (ranger-base-4yefx's arm
+		// is reapFleetClosed's alone, and mayReapWorkingSeat refuses the
+		// class too; this is the same answer one call earlier).
+		if !settled {
+			return "", false
+		}
 		why = "no bead pointer"
 	default:
 		return "", false

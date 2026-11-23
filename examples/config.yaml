@@ -83,6 +83,22 @@ default_emoji: ⚙️
 # reap_crew_after: 4h        # a closed bead's session you stepped into
 # reap_unpointed_after: 1h   # a per-bead-named session carrying no pointer
 #
+# And one grace for a seat that reads `working` over a bead the store of
+# record calls CLOSED (ranger-base-4yefx). A claude seat that ends its turn
+# with a background task live keeps reporting `working` with no end — MEASURED
+# 2026-11-23, 36 samples across one turn boundary, 36 of them `working` — so
+# "somebody is in there" stopped being what that reading means, and one lane
+# was held 41.6h by it. The sweep takes such a seat only with the whole
+# conjunction behind it: dispatch's own per-bead session, the bead closed, the
+# footer naming live background work with claude's `esc to interrupt` NOT in
+# it, nothing unsent in the box, a tree holding nothing, and this grace past
+# the last launch or prompt. Anything it cannot read keeps the seat and says
+# so on every pass. `off` disarms the KILL and not the line — unlike the two
+# graces above, where `off` puts the whole population back outside the sweep:
+# the lane being held in SILENCE was half this bug, so a seat in this state is
+# named on every pass whatever this is set to.
+# reap_working_after: 1h     # a seat reading `working` over a closed bead
+#
 # And the TREE, one surface over (ADR 0058): a session worktree whose bead is
 # closed, whose work is on the base, and whose session herdr can no longer
 # see. Same dial and the same `off`/`never`, and the same hour on the same

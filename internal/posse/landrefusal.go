@@ -3,9 +3,9 @@ package posse
 // What a landing turn that never settled was actually looking at —
 // ranger-base-4yefx, ask 2.
 //
-// THE INCIDENT. MEASURED 2026-11-23 by monica on this instance (multiplexer:
-// rex): holden-posse-ranger-base-tvokd, whose bead closed 2026-11-21T09:22:47
-// -05:00, read `working` for ~41.6h while its pane held three claude
+// THE INCIDENT. MEASURED 2026-11-23 by the coordinating persona on this
+// instance (multiplexer: rex): a dispatched seat <persona>-<repo>-ranger-base-tvokd,
+// whose bead closed 2026-11-21T09:22:47-05:00, read `working` for ~41.6h while its pane held three claude
 // background tasks ("Block until the suite exits, then read its verdict",
 // twice "Block on the suite and read its verdict") and its tree held nothing.
 // `posse kill` refused it twice — at the default 10m and again at
@@ -40,8 +40,8 @@ package posse
 // And for a kill, one more that nothing but the kill knows: whether a kill
 // would TAKE anything. `residueHolds` is RemoveSessionTree's own refusal
 // asked as a question (autoreap.go), and it is what turns "--no-land is
-// available" into "--no-land loses nothing" — the judgment monica made by
-// hand with `git status` before typing it.
+// available" into "--no-land loses nothing" — the judgment the operator made
+// by hand with `git status` before typing it.
 //
 // WHAT THIS DOES NOT DO. It decides nothing. The refusal still refuses, on
 // the same evidence and in the same direction: an unsettled turn stops the
@@ -128,11 +128,20 @@ func (b *HerdrBackend) landRefusalRead(m *HerdrMeta, stage string, read MuxReadi
 
 // Lines is the refusal's evidence, one clause per line, already indented for
 // a Die message's continuation lines. Empty when nothing could be read.
+//
+// Stage is what tells a refusal that was READ from the zero value: both
+// constructors set it, and nothing else does. So an arm that returns the
+// zero refusal — a submission herdr refused outright, a caller that never
+// reached the turn — renders no clauses at all, and the sentence above them
+// is exactly the sentence it was before this file existed. The reading
+// clauses are inside that test for the same reason: "the occupant named no
+// state" is a claim about an occupant that was ASKED, which the zero value
+// says nothing about.
 func (r landRefusal) Lines() []string {
-	var out []string
-	if r.Stage != "" {
-		out = append(out, "  the turn was "+r.Stage)
+	if r.Stage == "" {
+		return nil
 	}
+	out := []string{"  the turn was " + r.Stage}
 	switch {
 	case r.Reading && r.Last.State != "":
 		line := fmt.Sprintf("  the wait ended with last reading `%s`", r.Last.State)
@@ -150,6 +159,16 @@ func (r landRefusal) Lines() []string {
 		// MuxReading's own rule: an occupant that was asked and named no
 		// state reads as "", and that is an answer rather than a gap.
 		out = append(out, "  the wait ended with no readable state at all")
+	default:
+		// No reading on the refusal at all, which is herdr: its `agent
+		// wait` runs the window out inside its own server and hands back a
+		// code and a message, with no reading posse ever held
+		// (MuxWaitTimeout's last paragraph). The sentence above this one
+		// says "still working", and on this route that is the WAIT running
+		// out and not something anybody read — said here rather than left
+		// for the operator to assume, because the whole of this bead is an
+		// operator acting on that assumption twice.
+		out = append(out, "  the occupant named no state when its window closed, so `still working` above is the wait running out and not a reading")
 	}
 	if why := r.Hold.Why(); why != "" {
 		out = append(out, "  its pane is holding "+why)

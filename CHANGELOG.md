@@ -11,6 +11,31 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**A seat that ends its turn with a background task no longer holds its lane
+forever, and a kill that refuses says what it was looking at.**
+
+A claude seat that finishes its turn with a background shell still running
+keeps reporting `working` with no end — MEASURED over one seat's own turn
+boundary, 36 samples 20s apart, 36 of them `working`, never idle, never done.
+The end-of-pass reaper read that as "somebody is in there", so a seat whose
+bead had CLOSED and whose tree was clean held a lane for 41.6h while nothing
+anywhere said so: 252 land-sweep lines, 53 refill lines naming the busy lane,
+and not one line about a reap. The sweep now takes such a seat — but only with
+the whole conjunction behind it: dispatch's own per-bead session, the bead
+closed per the store of record, the footer naming live background work with
+claude's `esc to interrupt` NOT in it, nothing unsent in the box, a tree
+holding nothing, and `reap_working_after:` (1h) past the last launch or
+prompt. Anything it cannot read keeps the seat and says so on every pass;
+`off` disarms the kill and keeps the line.
+
+And `posse kill`/`posse relaunch`, when their landing turn will not settle,
+now print the evidence under the refusal: which leg refused, the reading the
+occupant held (on Rex that is the `program_status` record, its `msg` and
+`updated_at` included), what the pane is holding, and — on a kill — whether a
+kill would take anything at all, which is what makes `--no-land` a decision
+instead of a guess. The refusal still refuses on the same evidence; a refusal
+that could read nothing prints exactly the sentence it printed before.
+
 **Six more config keys are on the surface, including the reaper's three
 graces and the load guard's kill arm — and a census now holds the rest.**
 

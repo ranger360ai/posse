@@ -465,6 +465,7 @@ that the session is *finished*:
 | pointer | dispatch's own per-bead session | its bead reads **closed** |
 | crew | a crew mark on a session **dispatch made** | closed bead + `reap_crew_after:` (4h) + a tree holding nothing |
 | unpointed | a per-bead-named session with **no** `bead:` pointer | `reap_unpointed_after:` (1h) + a tree holding nothing, and only at a sweep **past routing** |
+| working | dispatch's own per-bead session still reading `working` | closed bead + a footer naming live background work with **no** `esc to interrupt` + an empty box + `reap_working_after:` (1h) + a tree holding nothing (ranger-base-4yefx) |
 
 Never taken, at any age: a conversation the operator MADE (`posse new` — the
 crew arm takes only the name `SessionForBead` renders from the session's own

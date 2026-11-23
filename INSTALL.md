@@ -2724,8 +2724,17 @@ crew-marked (`reap_crew_after:`, default `4h`), and a per-bead-named session
 carrying no bead pointer at all (`reap_unpointed_after:`, default `1h`, tagged
 `🏷️no-bead` in `posse list` so you can see which rule is judging it — and only
 swept once a pass has finished routing, since such a session may be a seat the
-pass is about to reuse). `off` on
-either restores the permanent skip. A conversation *you* made with `posse new`
+pass is about to reuse). A third is the seat that reads `working` over a bead
+the store already calls **closed** (`reap_working_after:`, default `1h`): a
+claude seat that ends its turn with a background task still running reports
+`working` with no end, so that reading stopped meaning "somebody is in
+there" — it held one lane for 41.6h before this arm existed. It is swept only
+where the screen agrees the turn has ended: the footer names live background
+work and does not carry claude's `esc to interrupt`, and nothing is sitting
+unsent in the box. Anything posse cannot read keeps the seat and says so on
+every pass. `off` disarms that third arm's kill but not its line — the other
+two take the whole population back out of the sweep, silently, and the silence
+is what cost the 41.6h here. A conversation *you* made with `posse new`
 is never swept at any age, and neither is your `pulse_persona:`. You can still
 reap by hand — `posse kill`, or `x` in the cockpit. Either way they cost
 nothing and do not block the next pass.

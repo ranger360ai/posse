@@ -64,7 +64,16 @@ func TestAutoReapKillsAClosedDoneSession(t *testing.T) {
 	}
 }
 
-func TestAutoReapKeepsAClosedWorkingSession(t *testing.T) {
+// Since ranger-base-4yefx this is the NO-EVIDENCE case rather than a flat
+// rule: a `working` reading over a closed bead may be taken, but only with
+// the whole of reapworking.go's conjunction behind it, and this fixture's
+// pane gives none of it — the fake's default `agent explain` previews
+// `fake_region` and no footer, so PaneHolding answers the zero hold and the
+// sweep has nothing that says what `working` means here. What it must do
+// then is keep the seat and SAY so, which is the half of that bead the 41.6h
+// silence is about. (reapworking_qa_test.go holds the arm itself, in arm 2
+// where the screen fixtures live.)
+func TestAutoReapKeepsAClosedWorkingSessionItCanLearnNothingAbout(t *testing.T) {
 	t.Parallel()
 	b, fake := newTestBackend(t)
 	d := newTestDispatcher(t, b)
@@ -75,7 +84,10 @@ func TestAutoReapKeepsAClosedWorkingSession(t *testing.T) {
 	d.autoReapPass(afterRouting)
 
 	if _, ok := b.readMeta("ranger-repo-a-1"); !ok {
-		t.Error("a session herdr still calls working must not be reaped, however its bead reads")
+		t.Errorf("a working session posse can read nothing about must not be reaped, however its bead reads:\n%s", dispatcherOut(d))
+	}
+	if out := dispatcherOut(d); !strings.Contains(out, "NOT reaped over bead a-1 closed: its agent reads") {
+		t.Errorf("a closed bead's seat holding a lane is named on every pass it holds — this line is the 41.6h one:\n%s", out)
 	}
 }
 

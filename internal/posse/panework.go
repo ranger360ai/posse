@@ -125,6 +125,24 @@ const (
 	// middle dot; nothing else in the line uses one.
 	footerSep = "·"
 
+	// footerInterruptHint is the footer part claude draws while a turn is in
+	// flight, and the one token in this line that is POSITIVE evidence a
+	// turn has NOT ended (ranger-base-4yefx). It is claude's own words, not
+	// posse's, and it is measured twice a quarter apart on this box:
+	//
+	//   2026-09-02, seven live panes (this file's head comment): the two
+	//   footers that differ only in the turn are `… · 1 shell · esc to
+	//   interrupt · ← for agents · ↓ to manage` (working) and `… · 1 shell ·
+	//   ← for agents · ↓ to manage` (IDLE, one still running).
+	//
+	//   2026-11-23, 36 samples of one seat taken 20s apart ACROSS its own
+	//   turn boundary with a background task live: present in 22 of 22
+	//   in-turn footers, absent from 14 of 14 post-turn ones, switching once
+	//   at 03:22:22 and never flapping back. All 36 carried `· 1 shell ·`,
+	//   and all 36 root program_status records read `working` — which is the
+	//   whole reason this token is worth reading (see reapworking.go).
+	footerInterruptHint = "esc to interrupt"
+
 	// composerANSIRegion is what the readings log calls the ONE line
 	// ghostbox.go decides on: the last composer line of an `agent read
 	// --format ansi`, escapes intact. It is posse's own name and not
@@ -208,6 +226,20 @@ type PaneHold struct {
 	// keystroke into one. ghostbox.go's note carries both halves and the
 	// command that finishes them.
 	Ghost string
+	// LiveTurn is the footer's own `esc to interrupt`: POSITIVE evidence
+	// that a turn is in flight in this pane (ranger-base-4yefx). It is not
+	// part of the hold — a turn is not something a settled pane is HOLDING —
+	// and no caller here acts on it being true; it rides on this struct
+	// because it is the same line of the same screen read at the same
+	// instant, and a second read taken to ask it would be a different
+	// screen.
+	//
+	// FALSE MEANS "NOT SEEN", which includes every screen posse could not
+	// read: the zero hold has LiveTurn false and nothing may read that as a
+	// turn having ended. What licenses that reading is `Work != "" &&
+	// !LiveTurn` off ONE hold — the footer was read, it named live
+	// background work, and claude's own interrupt hint was not in it.
+	LiveTurn bool
 	// Read is what this hold was read OFF — herdr's own verdict and the
 	// exact region bytes the readings above decided on, carried out of the
 	// reading so the caller that spends it can write it down (ADR 0066 D1,
@@ -297,6 +329,29 @@ func backgroundWorkIn(region string) string {
 	return ""
 }
 
+// turnInFlightIn is whether ONE footer region says a turn is running:
+// claude's `esc to interrupt`, anywhere in that region.
+//
+// ANCHORED BUT NOT EXACT, and the asymmetry is the whole of its safety. The
+// region is claude's footer and nothing else — the manifest's own
+// `after_last_horizontal_rule`, or captureFooter's positional read of the
+// same line — which is what keeps this bead's prose, and every transcript
+// line quoting the hint, out of the reading (captureFooter's anchoring note).
+// INSIDE that region the match is a substring, because the two directions
+// cost opposite things: seeing a turn that is not there keeps a seat exactly
+// as today, while missing one licenses a reap of a live turn. So a footer
+// that renders the hint with words around it reads as a turn in flight,
+// which is the direction that cannot lose work.
+//
+// FALSE IS NOT "THE TURN ENDED". It is "the hint is not in this region", and
+// a region posse never read answers it too. Only a caller that already knows
+// the footer WAS read and parsed — one holding a non-empty Work off the same
+// instant — may read false as the turn being over, and reapworking.go is
+// that caller and says so.
+func turnInFlightIn(region string) bool {
+	return strings.Contains(region, footerInterruptHint)
+}
+
 // backgroundTaskSummary answers whether one footer part IS a task summary,
 // returning it trimmed of the glyph claude prefixes some of them with.
 func backgroundTaskSummary(part string) string {
@@ -361,9 +416,15 @@ func (d AgentDetection) Composer() string {
 	return strings.TrimSpace(strings.TrimPrefix(body, composerMark))
 }
 
-// Hold reads both of them off one detection.
+// Hold reads both of them off one detection, and the turn hint beside them
+// (ranger-base-4yefx) — one footer preview, three questions.
 func (d AgentDetection) Hold() PaneHold {
-	return PaneHold{Work: d.BackgroundWork(), Typed: d.Composer()}
+	footer := d.regionPreview(footerRegion)
+	return PaneHold{
+		Work:     backgroundWorkIn(footer),
+		Typed:    d.Composer(),
+		LiveTurn: turnInFlightIn(footer),
+	}
 }
 
 // PaneHolding asks herdr what target's pane is holding. An explain that
@@ -469,6 +530,19 @@ func (b *HerdrBackend) PaneHolding(target Seat) PaneHold {
 //     a child of CLAUDE, not of the block, and never appeared in any
 //     sample — nor did the gate shell taking them.
 //
+// RE-MEASURED 2026-11-23 (ranger-base-4yefx, same method, 36 samples of one
+// seat 20s apart across its own turn boundary), because both of those
+// readings MOVED and the footer did not. Today's build keeps the root record
+// at `working` — 36 of 36, never idle, never done, which is a different bug
+// and reapworking.go's — writes the task summary into that record's own `msg`
+// ("1 shell still running", 14 of 14 post-turn samples), and DOES publish a
+// child record per background task, carrying its title. So the first bullet
+// above is dated rather than wrong: state, msg and the child records are all
+// different now. What this file reads is not: the footer carried `· 1 shell ·`
+// in all 36, and `esc to interrupt` discriminated the turn one-way (22 in-turn,
+// 0 post-turn). The root `msg` would do this job on Rex and is deliberately
+// not read — it is prose, and §2's Read is the verb both occupants have.
+//
 // claude's footer does carry it, verbatim and across the turn boundary:
 // `⏵⏵ auto mode on · 1 shell` in every settled sample. ADR 0076 rejected
 // "screen rules on Rex" and that stands: this is not a rule, not a detection
@@ -499,7 +573,7 @@ func (b *HerdrBackend) capturedHold(target Seat) PaneHold {
 		return PaneHold{}
 	}
 	footer := captureFooter(screen)
-	hold := PaneHold{Work: backgroundWorkIn(footer)}
+	hold := PaneHold{Work: backgroundWorkIn(footer), LiveTurn: turnInFlightIn(footer)}
 	if hold.Work != "" {
 		// The region is recorded whether or not herdr ever saw one, because
 		// the consequence sites log `hold.Read` and a record that named no

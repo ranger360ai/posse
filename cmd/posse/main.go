@@ -3373,9 +3373,17 @@ dispatch (beads):
                                  session with no bead pointer after
                                  reap_unpointed_after: (1h, and only at a
                                  sweep past routing — an unpointed session may
-                                 be a seat this pass is about to reuse). Both
-                                 only over a tree holding nothing, and "off"
-                                 on either restores the permanent skip)
+                                 be a seat this pass is about to reuse). A
+                                 per-bead session whose bead is CLOSED but
+                                 which still reads "working" goes after
+                                 reap_working_after: (1h), and only where the
+                                 screen says the turn has ended: its footer
+                                 names live background work and carries no
+                                 "esc to interrupt". All three only over a
+                                 tree holding nothing; "off" restores the
+                                 permanent skip on the first two, and on the
+                                 third disarms the kill but not the line that
+                                 names the held lane)
       --resume                 re-prompt in_progress beads whose persona
                                  session is alive and idle, and take them
                                  before fresh work (default: only interrupted

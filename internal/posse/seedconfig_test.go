@@ -431,6 +431,7 @@ var seedDurationDefaults = map[string]time.Duration{
 	"DefaultVerifyBoxMaxAge":     DefaultVerifyBoxMaxAge,
 	"DefaultCrewReapAfter":       DefaultCrewReapAfter,
 	"DefaultUnpointedReapAfter":  DefaultUnpointedReapAfter,
+	"DefaultWorkingReapAfter":    DefaultWorkingReapAfter,
 	"DefaultRetireTreeAfter":     DefaultRetireTreeAfter,
 	"DefaultVerifyBatchAge":      DefaultVerifyBatchAge,
 	"DefaultDispatchEpoch":       DefaultDispatchEpoch,
