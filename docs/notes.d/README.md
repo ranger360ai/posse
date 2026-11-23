@@ -9,6 +9,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 ## 2026-11
 
 - [ranger-base-p51zu](ranger-base-p51zu.md) — ranger-base-p51zu — a seat with no work prompt is a fact the records already held — 2026-11-23
+- [ranger-base-hcig1](ranger-base-hcig1.md) — ranger-base-hcig1 — the settle window's two exits, and what the illegible one cost — 2026-11-23
 - [ranger-base-zlvyk](ranger-base-zlvyk.md) — A park leaves the held commits on every branch already cut from that tip (ranger-base-zlvyk) — 2026-11-22
 - [ranger-base-x5zmk](ranger-base-x5zmk.md) — Four unwitnessed arms of the bounded suite queue, and the one that re-admitted the symptom (ranger-base-x5zmk) — 2026-11-22
 - [ranger-base-wiklv](ranger-base-wiklv.md) — Check 4's file boundary was already fixed; what still reproduced it was the install (ranger-base-wiklv) — 2026-11-22

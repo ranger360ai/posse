@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh` · corrected 2026-11-10 (ranger-base-nfc2b): a Rex block is addressed WITHIN its session, so §2's table's `-b` is incomplete and the occupant resolves a pane-only `Seat` itself, see "Correction: a Rex block is addressed within its session" below · amended 2026-11-10 (ranger-base-r5131): a reading whose only consequence is to WITHHOLD one may be taken off the screen on either occupant — "no screen rules on Rex" is about state, see "Amendment 5" below · amended 2026-11-10 (ranger-base-qzujz): a §4 verb that names a fact the RUNTIME owns may be answered on another occupant by asking the runtime — the conversation id is in claude's own per-session store, joined on the pid that holds the block, see "Amendment 6" below · amended 2026-11-10 (ranger-base-hlnyx): a screen reading may REFUSE a keystroke and still may not license one — a prompt into a claude block with no composer on its screen is refused, because the dialog eats the prompt and the Enter actuates its highlighted row, see "Amendment 7" below · amended 2026-11-11 (ranger-base-xdaw9): the same refusal on herdr's typed route, measured — `pane report-agent` overrides the label without blinding the detection, so that route types into a live claude, and the tell is the screen and not herdr's composer region, see "Amendment 8" below · amended 2026-11-15 (ranger-base-ybrk6, ADR 0080's exec amendment): a launch confirmation's FAILED read can be positive evidence — rex's own `not found` for this seat's target says the runtime ENDED, which the dispatched arm refuses instead of keeping, see "Amendment 10" below*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh` · corrected 2026-11-10 (ranger-base-nfc2b): a Rex block is addressed WITHIN its session, so §2's table's `-b` is incomplete and the occupant resolves a pane-only `Seat` itself, see "Correction: a Rex block is addressed within its session" below · amended 2026-11-10 (ranger-base-r5131): a reading whose only consequence is to WITHHOLD one may be taken off the screen on either occupant — "no screen rules on Rex" is about state, see "Amendment 5" below · amended 2026-11-10 (ranger-base-qzujz): a §4 verb that names a fact the RUNTIME owns may be answered on another occupant by asking the runtime — the conversation id is in claude's own per-session store, joined on the pid that holds the block, see "Amendment 6" below · amended 2026-11-10 (ranger-base-hlnyx): a screen reading may REFUSE a keystroke and still may not license one — a prompt into a claude block with no composer on its screen is refused, because the dialog eats the prompt and the Enter actuates its highlighted row, see "Amendment 7" below · amended 2026-11-11 (ranger-base-xdaw9): the same refusal on herdr's typed route, measured — `pane report-agent` overrides the label without blinding the detection, so that route types into a live claude, and the tell is the screen and not herdr's composer region, see "Amendment 8" below · amended 2026-11-15 (ranger-base-ybrk6, ADR 0080's exec amendment): a launch confirmation's FAILED read can be positive evidence — rex's own `not found` for this seat's target says the runtime ENDED, which the dispatched arm refuses instead of keeping, see "Amendment 10" below · amended 2026-11-23 (ranger-base-hcig1): a `Wait` that runs its window out may CARRY the last reading the occupant held — on the error, never in the result — because the one caller that has to decide on that refusal cannot parse a state out of a sentence, see "Amendment 11" below*
 
 ## Context
 
@@ -2353,3 +2353,116 @@ gone rests on which refusal it was.
   is that the sentence is rex's own answer about the id posse named: the
   predicate reads nothing about exit codes, and a hang, a refused
   connection and a missing binary all stay on the ignorance arm.
+
+## Amendment 11: a `Wait` refusal may CARRY the reading the occupant held; it is still not a reading (ranger-base-hcig1, 2026-11-23)
+
+§2's Wait row says running out is the occupant's own refusal to report
+and not a reading, and that stands unchanged: the verb's RESULT is
+still empty on a blown deadline, so no caller can open a gate on one.
+What this amendment settles is the fact that sentence leaves nowhere to
+go — WHICH refusal it was.
+
+`RexMux.Wait` has named the last state it read since the day it was
+written. It named it in prose, inside a sentence built for whoever
+reads the error as text, beside the block id that sentence is about.
+The one caller that has to DECIDE on that refusal rather than print it
+— dispatch's settle ladder — could do nothing with it, and left by the
+raw error.
+
+### What broke
+
+The DIAGNOSIS, and the record, not the gate: nothing was prompted
+either way. MEASURED 2026-11-23 over the live fleet's two dispatch pass
+logs (`state/dispatch-watch.log` and `.log.1`, 66,287 lines, armed
+2026-11-10 18:53 through the reading): 46 lines of the launcher's
+abandonment shape, of which 21 are a bounded wait that ran out on the
+seat. The two spellings of that one fact:
+
+| exit | what posse said |
+| --- | --- |
+| `awaitTarget`, 16 of 21 | `no agent detected in <seat>-posse-<bead> after 45s — check the session (posse peek <seat>-posse-<bead>)` |
+| the occupant's `Wait`, 5 of 21 | `herdr: no idle\|done\|blocked state in block:01a205f7-7021-75cf-9b39-b0a384535850 within 16.446s (last reading: working) (timeout)` |
+
+The second names a block UUID no posse verb takes, no session, no
+`posse peek`, and `herdr:` on an instance whose multiplexer is Rex
+(`HerdrAPIError.Error()`'s prefix, ranger-base-l32dl's class one
+envelope lower). It also wrote no readings-log record, so
+`scripts/readings-census.py` counted 0 of the 5 and the denominator for
+"launches refused at the settle gate" was missing its whole timeout
+half. The five, in five beads: ranger-base-72z36 (16.446s, working),
+ranger-base-k0hd6 (2.203s, working), ranger-base-kzbg8 (32.763s,
+unknown), and two more of that last shape, `unknown` at 42.948s and at
+26.541s, whose beads are open and are therefore named here by id and
+nothing else (AGENTS.md, "Landing the plane"):
+
+- ranger-base-1mxhx
+- ranger-base-al0d0
+
+Folding that error into the ladder's own deadline arm unchanged was the
+obvious fix and is the wrong one. That arm concedes first — when no
+poll in the window ever produced a readable detection it prompts the
+pane on whatever state it has, out loud — and on a §4-missing instance
+that is EVERY launch: the same two logs hold 856 `prompting on its …
+anyway` lines against 0 `never became promptable`. So the fold would
+not refuse at all; it would type at a pane whose last reading was
+`working`, which is rangerhq-37c's race.
+
+### Decision
+
+**D1. A `Wait` that runs out may carry the last reading the occupant
+HELD, on the error and not in the result** (`MuxWaitTimeout`,
+internal/posse/mux.go). The result stays empty, so §2's row is intact
+and nothing can read a blown deadline as a state. What the error
+carries is what the occupant was looking at when it gave up.
+
+**D2. It wraps the envelope rather than coining a code.** `timeout` is
+what four live sites branch on through `IsHerdrCode` — the gather wait
+leg, the stall probe, relaunch's landing and `RexMux.Prompt`'s own
+first leg — and that is `errors.As` over `HerdrAPIError`, so `Unwrap`
+keeps every one of them and `HerdrCodeOf` still records `timeout` in a
+readings row. A new code, or a field on `HerdrAPIError`, would have
+moved what those sites match on in order to carry a fact none of them
+reads.
+
+**D3. An occupant with no reading carries none, and the caller says
+so.** herdr runs the window out inside its own server and answers with
+an envelope; posse never held a reading. `MuxWaitLastReading` answers
+false there and the refusal's sentence says the multiplexer carried no
+reading back, rather than rendering a state nobody read.
+
+**D4. A caller may only REFUSE on it**, which is Amendment 5's risk
+profile read for an error: the one permitted output is "this settle is
+not one". It never admits a runtime, never licenses a keystroke, and
+the worst a wrong one can do is abandon a launch that was already being
+abandoned by the line above it.
+
+### Consequences
+
+- The settle window's two exits say one sentence — `agent in <session>
+  never became promptable within <wait> — <why>; check the session
+  (posse peek <session>)` — and record two verdicts, `never settled:
+  the wait ran out …` against `never promptable: …`, so a census can
+  price "the occupant never answered a settle" apart from "posse never
+  confirmed the settle it was handed" (internal/posse/settletimeout.go,
+  ADR 0066 D1).
+- That record is a D1 under `RuleSettleGate` and carries NO pane
+  capture, by the rule `logBlockedRefusal` already argued for its own D1
+  branch: a state from a verb that answers with a state is not a screen
+  reading, and a capture there would be posse reading a pane its own
+  decision never looked at. No `LooksLike` either, so
+  `Reading.LooksLike`'s documented scope (D3, and the one D2 class)
+  stays true.
+- The patience the sentence names is the LADDER's and not the call's.
+  The occupant's own message names what was left of the window when its
+  last `Wait` began, which shrinks every poll and is a fact about the
+  loop's arithmetic rather than about the seat.
+- **The residual, and it is the larger one.** On a §4-missing instance
+  the ladder cannot SEE a settle, so it spends the whole startup wait
+  and decides on whichever reading is last — while `Wait` has been
+  handing it a `Seen` it drops (`res.State` is read, `res.Seen` is
+  not), and §3 calls that field the Rex form of herdr's own. Two of the
+  five above had been reading settled for most of their window. Filed as
+  ranger-base-25otk, which needs a ruling and not a patch — that reading
+  LICENSES a keystroke, so Amendment 5's risk profile does not reach it.
+  This amendment makes the abandonment legible and changes nothing about
+  when it happens.

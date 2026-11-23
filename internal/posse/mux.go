@@ -21,6 +21,8 @@ package posse
 // is "not available" — never "no", which is ADR 0013's unknown-is-not-no
 // rule.
 
+import "errors"
+
 // Seat is one addressable place a runtime runs: an opaque handle the
 // occupant fills, posse passes back, and the meta file stores.
 //
@@ -255,7 +257,9 @@ type Mux interface {
 	State(s Seat) (MuxReading, error)
 	// Wait blocks until the runtime reaches one of `until` or timeoutMS
 	// runs out. Running out is the occupant's own refusal to report — on
-	// herdr a `timeout` API code — and not a reading.
+	// herdr a `timeout` API code — and not a reading. An occupant that
+	// HELD a reading when the window closed carries it on that refusal
+	// (MuxWaitTimeout); it is still not a reading of the seat's state.
 	Wait(s Seat, until []string, timeoutMS int) (MuxReading, error)
 	// Prompt submits text to the runtime. wait blocks until the first
 	// settled idle|done|blocked state.
@@ -266,6 +270,64 @@ type Mux interface {
 	// prune compares the record's against the live one before it may act
 	// on the seat (ADR 0076 §5).
 	Server() MuxServer
+}
+
+// MuxWaitTimeout is Wait's refusal with the last reading the occupant held
+// when the window closed (ranger-base-hcig1).
+//
+// THE REFUSAL IS STILL NOT A READING, and the Wait row above says so
+// unchanged: `Last` is what the occupant was looking at when it gave up, not
+// a state the seat is IN. Nothing may open a gate on it. What it is for is
+// the one thing a caller cannot otherwise do — SAY which refusal this was.
+// "the window closed with the last reading `working`" and "the window closed
+// with nothing readable at all" are different facts about a seat, and a
+// launcher that abandons one of them owes the operator the difference.
+//
+// IT RIDES STRUCTURALLY BECAUSE THE MESSAGE IS PROSE. RexMux.Wait has always
+// named the last state — inside a sentence, beside a block id, in the
+// occupant's own spelling. A caller that wanted the state back out of that
+// would be parsing a diagnostic, which is the shape this repo refuses
+// everywhere else (HerdrAPIError's own doc: "Matching on the message text
+// would be a guess").
+//
+// IT WRAPS THE ENVELOPE RATHER THAN REPLACING IT. `timeout` is the code four
+// live sites branch on through IsHerdrCode — the gather wait leg
+// (dispatch.go), the stall probe (promptstall.go), relaunch's landing and
+// RexMux.Prompt's own first leg — and IsHerdrCode is errors.As over
+// HerdrAPIError, so Unwrap keeps every one of them and HerdrCodeOf still
+// records `timeout` in a readings row. A new code, or a field on
+// HerdrAPIError, would have moved what those sites match on to carry a fact
+// none of them reads.
+//
+// AN OCCUPANT WITH NO LAST READING RETURNS THE ENVELOPE ALONE, which is
+// herdr: its `agent wait` runs the window out inside its own server and
+// hands back a code and a message, with no reading posse ever held.
+// MuxWaitLastReading then answers false, and a caller's sentence says that
+// rather than inventing a state for it.
+type MuxWaitTimeout struct {
+	// Err is the envelope this refusal is, and the only thing callers that
+	// branch on the code ever see.
+	Err HerdrAPIError
+	// Last is the reading the occupant held when the deadline closed. Its
+	// State may be "" — an occupant can run a window out having read
+	// nothing — which orUnknown renders rather than hiding.
+	Last MuxReading
+}
+
+func (e MuxWaitTimeout) Error() string { return e.Err.Error() }
+
+// Unwrap is what keeps IsHerdrCode(err, "timeout") true through this type.
+func (e MuxWaitTimeout) Unwrap() error { return e.Err }
+
+// MuxWaitLastReading is the reading a Wait refusal carried, and whether it
+// carried one at all. False for every other error, which includes herdr's
+// own timeout envelope — see the type's last paragraph.
+func MuxWaitLastReading(err error) (MuxReading, bool) {
+	var t MuxWaitTimeout
+	if errors.As(err, &t) {
+		return t.Last, true
+	}
+	return MuxReading{}, false
 }
 
 // MuxCloseGone is an occupant that can read its own Close refusal: whether

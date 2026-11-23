@@ -6622,6 +6622,14 @@ func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.
 // It returns the state and the detection it accepted, so a caller — the
 // live test, for one — can say what the gate actually opened on rather than
 // re-reading the pane a moment later and asking a different question.
+//
+// THE WINDOW HAS TWO EXITS AND THEY SAY THE SAME SENTENCE. The deadline check
+// at the foot of this loop is one; the other is the occupant's own `Wait`
+// refusing, which happens at the same instant because `ms` below is sized
+// from this same deadline. Both mean "the window closed with the last reading
+// not settled", and settletimeout.go is the second one — why it is an arm of
+// its own rather than a fall-through into the first, and what the five
+// measured launches it abandoned illegibly cost (ranger-base-hcig1).
 func (d *Dispatcher) awaitSettled(id, session string, target Seat, until []string, deadline time.Time, wait time.Duration) (string, AgentDetection, error) {
 	// A guess makes `agent wait` return instantly, so the poll is the only
 	// thing pacing this loop — an unset Poll must not become a busy loop
@@ -6646,6 +6654,18 @@ func (d *Dispatcher) awaitSettled(id, session string, target Seat, until []strin
 		}
 		res, err := d.HB.Mux().Wait(target, until, ms)
 		if err != nil {
+			// The occupant ran this window out and refused. That is the
+			// SAME fact the deadline arm at the foot of this loop decides —
+			// the window closed with the last reading not settled — reached
+			// by the other of the two routes a window has to close on, and
+			// until ranger-base-hcig1 it left by this line raw: no record,
+			// a sentence naming the occupant's block id instead of the
+			// session, and no `posse peek`. settletimeout.go is that arm,
+			// and why it is an arm of its own rather than a fall-through
+			// into the one below.
+			if IsHerdrCode(err, "timeout") {
+				return "", AgentDetection{}, d.refuseUnsettled(id, session, wait, err)
+			}
 			return "", AgentDetection{}, err
 		}
 		status := res.State

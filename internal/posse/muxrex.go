@@ -464,6 +464,13 @@ func (m RexMux) reading(s Seat) (MuxReading, string, error) {
 // A Rex instance that answered a blown deadline with a reading would give
 // those three sites a different meaning for the same silence.
 //
+// THE REFUSAL CARRIES THE LAST READING ANYWAY, on the error and not in the
+// returned `MuxReading` (MuxWaitTimeout, ranger-base-hcig1). That keeps both
+// halves of the sentence above: the verb's RESULT is still empty, so no
+// caller can read a blown deadline as a state, and the one caller that must
+// say which refusal this was can ask the error instead of parsing the
+// message text it has named the state in since this file was written.
+//
 // The first sample is taken before the first sleep, because `agent wait`
 // returns on a state that is already there and a poller that slept first
 // would answer a question nobody asked (promptstall.go's note on the race).
@@ -521,10 +528,23 @@ func (m RexMux) Wait(s Seat, until []string, timeoutMS int) (MuxReading, error) 
 		}
 		left := time.Until(deadline)
 		if left <= 0 {
-			return MuxReading{}, HerdrAPIError{Code: "timeout",
-				Message: "no " + strings.Join(until, "|") + " state in " + s.Pane +
-					" within " + (time.Duration(timeoutMS) * time.Millisecond).String() +
-					" (last reading: " + rexStateForMessage(read) + ")"}
+			// The last reading rides back in BOTH shapes, and they are not
+			// the same shape twice (ranger-base-hcig1). The sentence is for
+			// whoever reads this error as text — `posse wait` prints it —
+			// and it names the block because that is the seat this occupant
+			// was addressing. `Last` is for the one caller that has to
+			// DECIDE how to abandon a launch and then say why in its own
+			// words: dispatch's settle ladder, which knows the session, the
+			// bead and the patience this refusal has none of, and which
+			// cannot get the state back out of a sentence without parsing a
+			// diagnostic.
+			return MuxReading{}, MuxWaitTimeout{
+				Last: read,
+				Err: HerdrAPIError{Code: "timeout",
+					Message: "no " + strings.Join(until, "|") + " state in " + s.Pane +
+						" within " + (time.Duration(timeoutMS) * time.Millisecond).String() +
+						" (last reading: " + rexStateForMessage(read) + ")"},
+			}
 		}
 		if p := m.poll(); left > p {
 			left = p

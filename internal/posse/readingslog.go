@@ -627,6 +627,14 @@ const (
 	// this name is therefore "posse refused a launch on a state herdr
 	// answered and no rule was in hand", which is a different finding from
 	// the rows beside it rather than a missing value.
+	//
+	// TWO WAYS THAT HAPPENS, and since ranger-base-hcig1 both are recorded.
+	// The first is a second read that disagreed or failed. The second is a
+	// window the occupant's own `Wait` ran out: there was never a rule to
+	// have, because that verb answers with a state and nothing else
+	// (settletimeout.go). They are told apart by the verdict — `never
+	// settled idle:` against `never settled: the wait ran out` — and not by
+	// this field, which is the same finding in both.
 	RuleSettleGate = "dispatch.go:awaitSettled"
 )
 
