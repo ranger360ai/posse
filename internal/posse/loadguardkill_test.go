@@ -552,3 +552,77 @@ func TestTheMarkerIsDocumentedForEveryPersona(t *testing.T) {
 		}
 	}
 }
+
+// The live-state row (ranger-base-p6yrb). The arm's only voice used to be the
+// load-guard line, which speaks solely on a load-skipped pass that also found
+// a leak — so an armed box and a disarmed one read identically on every
+// healthy pass, and the only standing answer to "could that arm have fired"
+// was a file comment, which was wrong.
+//
+// The SILENCE is the arm that carries the mutation load: a row that printed
+// on the shipped default would be furniture on every box, and furniture is
+// what a reader skips.
+//
+// MUTATION: make LoadGuardKillLine return a line for the default → the two
+// silent rows red. Return "" for a typo → the typo row reds. Re-word the
+// typo sentence instead of passing it through → the verbatim arm reds.
+func TestLoadGuardKillLineSpeaksOnlyWhenTheStateIsNotTheDefault(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		cfg  string
+		want []string // substrings, or nil for "must say nothing"
+	}{
+		// The shipped default, written both ways. Silence.
+		{"", nil},
+		{"load_guard_kill: false\n", nil},
+		// Armed: the state the bead was filed about. The row must name the
+		// arm, the key, the file the value came from, and the predicate's
+		// own floors — a reader mid-incident is ruling the arm in or out
+		// against a process he is holding.
+		{"load_guard_kill: true\n", []string{
+			"kill arm ARMED", "load_guard_kill: true in ", "ppid 1", "20%", "over 1m", LoadOrphanKeepMarker,
+		}},
+		// A typo is OFF, so the inertness rule above would hide it — and
+		// hiding it leaves an operator who meant `true` believing he armed
+		// something. It speaks, in LoadGuardKill's own words.
+		{"load_guard_kill: yes\n", []string{"not true or false", "stays OFF"}},
+	} {
+		a := NewAppAt(t.TempDir())
+		if tc.cfg != "" {
+			if err := os.WriteFile(a.ConfigPath, []byte(tc.cfg), 0o644); err != nil {
+				t.Fatalf("config: %v", err)
+			}
+		}
+		got := a.LoadGuardKillLine()
+		if tc.want == nil {
+			if got != "" {
+				t.Errorf("LoadGuardKillLine(%q) must be silent on the shipped default, said %q", tc.cfg, got)
+			}
+			continue
+		}
+		for _, want := range tc.want {
+			if !strings.Contains(got, want) {
+				t.Errorf("LoadGuardKillLine(%q) must name %q, said %q", tc.cfg, want, got)
+			}
+		}
+	}
+	// The typo sentence is the SAME BYTES as the one the load-guard line
+	// prints, so one grep finds both surfaces.
+	a := NewAppAt(t.TempDir())
+	if err := os.WriteFile(a.ConfigPath, []byte("load_guard_kill: yes\n"), 0o644); err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	_, warn := a.LoadGuardKill()
+	if got := a.LoadGuardKillLine(); got != warn {
+		t.Errorf("the typo row must pass LoadGuardKill's own sentence through verbatim:\n row  %q\n warn %q", got, warn)
+	}
+	// And `posse status` must actually print it. A reading nothing calls is
+	// the defect this bead closed, one layer down.
+	src, err := os.ReadFile("../../cmd/posse/main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	if !strings.Contains(string(src), "a.LoadGuardKillLine()") {
+		t.Errorf("`posse status` must print LoadGuardKillLine — it is the surface loadguardkill.go's header now points a reader at")
+	}
+}

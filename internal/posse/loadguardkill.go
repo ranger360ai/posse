@@ -77,11 +77,29 @@ package posse
 // gone, pid recycled into something else, ppid no longer 1, argv no longer
 // ours, a declaration that appeared in between — is skipped, not killed.
 //
-// SHIPPED OFF. `load_guard_kill:` defaults to false and this bead does not
-// flip it: arm 1 has exactly one field datum (ranger-base-k6csq, 40 real
-// leaks and no false positive) and the ruling's first verification bar is
-// field data, which is the operator's to read. The live flip is its own
-// operator bead.
+// THE DEFAULT IS OFF, AND A DEFAULT IS NOT A READING OF THIS BOX.
+// `load_guard_kill:` defaults to false; the bead that shipped this arm did
+// not flip it, because arm 1 had exactly one field datum at the time
+// (ranger-base-k6csq, 40 real leaks and no false positive) and the ruling's
+// first verification bar is field data, which is the operator's to read. The
+// live flip was its own operator bead, and on the first instance to run this
+// code that bead was ruled, flipped and closed the following day
+// (ranger-base-w3aet, 2026-09-02).
+//
+// So this paragraph used to be headed SHIPPED OFF and read as a statement
+// about the running box, on a box where the arm was ARMED. The cost is paid
+// by whoever reads it next under pressure: ranger-base-evx07 listed this arm
+// as the FIRST candidate for a walled seat killed from outside, and the first
+// thing this file told that reader was that it could not have fired. It took
+// a read of the live config to find otherwise (ranger-base-p6yrb) — the exact
+// false-confidence failure the care above about false positives exists to
+// prevent. A comment cannot track config and must not pretend to.
+//
+// WHERE THE LIVE VALUE IS: `App.LoadGuardKill` and nowhere else — config key
+// `load_guard_kill:`, re-read on every pass, absent and `false` both OFF,
+// anything that is not `true` or `false` named and OFF. `posse status` prints
+// that reading whenever it is not the shipped default (LoadGuardKillLine),
+// which is the surface to read instead of this paragraph.
 
 import (
 	"context"
@@ -159,6 +177,50 @@ func (a *App) LoadGuardKill() (armed bool, warn string) {
 	default:
 		return false, fmt.Sprintf("load guard: config load_guard_kill: %q is not true or false — the kill arm stays OFF", raw)
 	}
+}
+
+// LoadGuardKillLine is the kill arm's LIVE state as `posse status` prints
+// it: the surface that answers "could this arm have signalled something on
+// this box" WITHOUT waiting for it to act (ranger-base-p6yrb).
+//
+// It exists because until it did, the arm's only voice was the load-guard
+// line, and that line speaks only on a pass the load guard is already
+// skipping that also found a leak. ranger-base-w3aet's own close said so —
+// "the arm prints only when it acts" — and the consequence is that an armed,
+// irreversible, destructive arm and a disarmed one printed the same thing
+// (nothing) on every healthy box, which left a file comment as the only
+// answer to the question and the comment was wrong.
+//
+// "" ON THE SHIPPED DEFAULT, which is the inertness rule the backup and
+// live-box rows keep: off is the designed state and a line about it on every
+// tick is furniture. The two states that are NOT the designed state both
+// speak. ARMED, because an irreversible arm nobody can see is the whole
+// defect. And a TYPO — which is OFF, so the inertness rule would hide it —
+// because LoadGuardKill's refusal was reaching a reader only through
+// orphanReport's report-only branch, i.e. only once the box held a leak: an
+// operator who meant `true` and typed `yes` learned nothing at all until the
+// moment the arm he thought he had armed declined to act. That sentence is
+// printed VERBATIM, not re-worded, so one grep finds every surface saying it.
+//
+// A READING, NOT A CONDITION. It joins no governance set and moves no exit
+// code, the same split the backup, live-box and plan-meter lines keep: a shop
+// check prints the things that need a human, and an arm the operator armed on
+// purpose is not one. Nothing here says that flip was wrong.
+func (a *App) LoadGuardKillLine() string {
+	armed, warn := a.LoadGuardKill()
+	if warn != "" {
+		return warn
+	}
+	if !armed {
+		return ""
+	}
+	// The predicate is named from the same constants orphanReport's head
+	// renders, rather than described, because the point of the row is that a
+	// reader mid-incident can rule the arm in or out against the process he
+	// is holding — and a prose paraphrase of a floor is the thing this bead
+	// is about.
+	return fmt.Sprintf("load guard · kill arm ARMED · load_guard_kill: true in %s · an UNDECLARED orphaned gate-shell child (ppid 1, over %g%% CPU, over %s) gets TERM and then KILL on a load-skipped pass; %s anywhere in its argv spares it",
+		AbbrevHome(a.ConfigPath), LoadCulpritOrphanCPU, BlindFor(LoadOrphanMinAge), LoadOrphanKeepMarker)
 }
 
 // orphanDeclared reads the declare-or-die marker off a process's argv and

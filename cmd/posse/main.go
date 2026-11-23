@@ -1338,6 +1338,23 @@ func main() {
 		if line := a.PlanQuietLine("status", time.Now()); line != "" {
 			fmt.Fprintf(out, "%s\n", line)
 		}
+		// Whether the load guard's KILL arm is armed on this box
+		// (ranger-base-p6yrb). Same split and same reason as the mute one
+		// line up: a config flip arms a destructive, irreversible act —
+		// TERM then KILL to leaked gate-shell children chosen by a
+		// predicate — and before this row the arm's only voice was the
+		// load-guard line, which speaks solely on a load-skipped pass that
+		// also found a leak. So an armed box and a disarmed one read
+		// identically on every healthy pass, and the only answer to "could
+		// that arm have fired" was loadguardkill.go's header, which said
+		// SHIPPED OFF on a box running `load_guard_kill: true`. Silent on
+		// the shipped default, loud on the two states that are not it
+		// (armed, and a typo that leaves it OFF while the operator thinks
+		// otherwise). A reading, not a condition: it joins no governance
+		// set and moves no exit code. Files only, no fork.
+		if line := a.LoadGuardKillLine(); line != "" {
+			fmt.Fprintf(out, "%s\n", line)
+		}
 		// A second bd store sitting beside a redirect in a configured
 		// `beads:` tree (ADR 0012 D3, secondstore.go, ranger-base-dj3k2).
 		// The same bytes the watch pass preamble prints, so one grep finds

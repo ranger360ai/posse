@@ -12,6 +12,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-uc3ng](ranger-base-uc3ng.md) — ranger-base-uc3ng — the merge-back block's citation sent the seat to a pre-fix copy of its own recipe — 2026-11-23
 - [ranger-base-thrn2](ranger-base-thrn2.md) — ranger-base-thrn2 — the line rule read the format's own newlines, and the newline can arrive inside an argument — 2026-11-23
 - [ranger-base-q5fee](ranger-base-q5fee.md) — ranger-base-q5fee — the other two ladders, and a §2 verb nothing called — 2026-11-23
+- [ranger-base-p6yrb](ranger-base-p6yrb.md) — ranger-base-p6yrb — a comment that tracked config, and the row that replaced it — 2026-11-23
 - [ranger-base-p51zu](ranger-base-p51zu.md) — ranger-base-p51zu — a seat with no work prompt is a fact the records already held — 2026-11-23
 - [ranger-base-i65lw](ranger-base-i65lw.md) — ranger-base-i65lw — verifying four closes, and the conjunct census that found the gap — 2026-11-23
 - [ranger-base-hcig1](ranger-base-hcig1.md) — ranger-base-hcig1 — the settle window's two exits, and what the illegible one cost — 2026-11-23

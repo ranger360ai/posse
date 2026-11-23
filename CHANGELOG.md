@@ -11,6 +11,29 @@ being cut is a precondition of the tag; see `docs/runbooks/release.md`.
 
 ## Unreleased
 
+**`posse status` now says whether the load guard's KILL arm is armed on this
+box.**
+
+*One new line, printed only when the arm is not in its shipped-off default.
+No change to the arm itself, and nothing to set.*
+
+The kill arm TERMs and then KILLs leaked gate-shell children, and its only
+voice was the load-guard line — which speaks solely on a pass the load guard
+was already skipping that *also* found an undeclared leak. So on every healthy
+pass an armed box and a disarmed one printed the same thing: nothing. That
+left the implementing file's header comment as the only standing answer to
+"could that arm have signalled this", and a comment cannot track config: the
+header said SHIPPED OFF, which was true of the release that shipped the arm
+and false on the first instance to run it, where the operator armed it the
+next day. An incident reading that header ruled the arm out and went looking
+elsewhere. `posse status` prints the live reading now — the arm, the config
+key, the file the value came from, and the predicate's own floors, so the arm
+can be ruled in or out against a process you are holding. It is silent on the
+shipped default, and loud on a `load_guard_kill:` that is neither `true` nor
+`false`: that leaves the arm OFF while the operator believes otherwise, and
+until now it said so only once the box held a leak. A reading, not a
+condition — it joins no governance row and moves no exit code.
+
 **A seat that ends its turn with a background task no longer holds its lane
 forever, and a kill that refuses says what it was looking at.**
 
