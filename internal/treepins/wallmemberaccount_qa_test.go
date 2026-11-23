@@ -162,13 +162,67 @@ package treepins
 // every term read out of the tree, and the account's width was 199 characters
 // of REASONING that one edit to one function gave back. At the old tail the
 // derived budget was 95 and arm 6 red 28 of 65; at today's 27-character tail
-// it is 267 and arm 6 reds nothing, with 34 characters of headroom on the
-// widest literal preamble in the set (233, bwrapseatstorelive_test.go:751).
+// it is 267 and arm 6 reds nothing, with 58 characters of headroom on the
+// widest HEAD it charges: 209 at internal/posse/bwrapgitrefslive_test.go:598,
+// which is 30 of go test's own prefix plus a 179-character literal preamble
+// (MEASURED 2026-11-22 at 7dc3313e, and the figure the arm's own Logf prints
+// — read that, not this line). Until ranger-base-q41e8 this sentence read
+// "34 … on the widest literal preamble in the set (233,
+// bwrapseatstorelive_test.go:751)" and was wrong twice over: 233 was
+// ranger-base-uu303's and ranger-base-dxaxt's reading of a row that
+// ranger-base-bj1hh then shortened out of the account-carrying set
+// altogether — a figure carried across the landing that falsified it — and it
+// named the preamble alone while the headroom beside it was computed from
+// prefix PLUS preamble, which is the sum the rule actually bounds.
 // So ORDER WITHIN THE FIRST LINE IS PINNED, as a NECESSARY condition and not a
 // sufficient one: three member messages blow the 300 on interpolated fixture
 // paths no static census can see (ranger-base-bj1hh), and sufficiency needs
 // each member's messages rendered under its fixture and sliced as evidence()
 // does — a venue ranger-base-uu303 records rather than files, so the next attempt does not re-try a static rule.
+//
+// AND THE PREFIX TERM IS CHARGED TO THE FILE go test WILL PRINT, which is not
+// always the file the message is written in (ranger-base-x1ofd's decision,
+// ranger-base-q41e8's landing). testing's decorate() writes the first
+// NON-helper frame, so a message rendered inside a t.Helper() is decorated
+// with the CALLING file and its line, and a term charging the helper's own
+// basename charges a file that never appears on the line. The member set's
+// sharpest case is bgSeatAbstainAccount's `NOTHING MEASURED` line, ADR 0097
+// D3's exit 3, whose whole chain calls t.Helper() (bgSeatAbstain,
+// bgSeatAbstainIfOutside, wwAbstainIfOutside) with 52 call sites between the
+// two doors at 7dc3313e — so there is no one caller to read, and the decision
+// is to charge the WIDEST basename in the member set, derived from the set the
+// way wmaMemberPattern derives the set itself (wmaRenderedInHelper picks the
+// case, wmaHelperPrefix charges it). It is the strictest honest reading, and
+// it keeps the rule a FLOOR either way: a line that fits at its own caller and
+// not at the widest is still one caller away from being cut, which is the
+// direction every other floor in this file points.
+//
+// AND IT WAS NEVER ONE MESSAGE. The decision was taken for the one line
+// ranger-base-x1ofd's parameter route adds, on the reading that nothing arm 6
+// graded was in such a helper — which is what wmaLinePrefix's docstring said
+// too. MEASURED 2026-11-22 at 7dc3313e, with that route NOT in this tree:
+// EIGHT of the 65 messages arm 6 already grades are rendered inside a
+// t.Helper(), so the term was charged to the wrong file eight times over
+// before the route that raised the question existed. Four are named helpers
+// (wallwatchlive_test.go's wwWaitKilled at :300 and :303 and launchOn at :139
+// and :143), one is a fixture helper (bwrapgitrefslive_test.go's
+// packUnderALiveSeat at :841), and three are closures that call t.Helper()
+// themselves (wallclaudeprojectsattack_qa_test.go:386 and :389,
+// wallwatchlive_test.go:604). It reds nothing: the widest of the eight is
+// attack:389, which the widest basename moves from 206 to 209 of the same
+// 267, so the headroom above is unchanged by this landing.
+//
+// AND THE TERM IS STILL WITNESSED HERMETICALLY AND NOT BY THE TREE, for
+// ranger-base-dxaxt's own reason one reading on (its mutant 8: the whole
+// prefix replaced by a constant 0 and arm 6 stays green). A mutant answering
+// "not a helper" everywhere charges those eight 27 to 41 where the decision
+// charges 44, and arm 6 is green either way — so the reading and the
+// arithmetic are both held in arm 7 over planted source, including the
+// distinction that decided the reading: a closure inside a helper is its own
+// frame unless it calls t.Helper() itself, and the sloppier "a Helper() call
+// anywhere under the enclosing FuncDecl" reads nine of the 65 rather than
+// eight, the ninth (wallwatchlive_test.go:614) written in a test body beside
+// a closure that is a helper.
 //
 // IT ENUMERATES A DISCOVERED FILE SET (the Glob below), so it is in this
 // package's one-package-census class and is doored by `make treepins-check` —
@@ -728,6 +782,8 @@ type wmaMsg struct {
 	name     string // how the account is spelled at this call site
 	route    string // which arm of the key read it
 	ellipsis bool   // the call ends in a variadic spread
+	helper   bool   // rendered inside a t.Helper(), so go test prints the CALLER's file
+	helperIn string // the innermost function containing it, for the report
 }
 
 // wmaAccountMessages is THE KEY, in ONE place: every format call in one member
@@ -747,6 +803,7 @@ type wmaMsg struct {
 // (ranger-base-momix).
 func wmaAccountMessages(f wmaFile) []wmaMsg {
 	runner, folded := wmaAccountLocals(f), wmaFoldLocals(f)
+	spans := wmaFuncSpans(f.ast)
 	var out []wmaMsg
 	ast.Inspect(f.ast, func(n ast.Node) bool {
 		c, ok := n.(*ast.CallExpr)
@@ -761,6 +818,7 @@ func wmaAccountMessages(f wmaFile) []wmaMsg {
 		if !ok {
 			return true
 		}
+		helper, helperIn := wmaRenderedInHelper(spans, c.Pos())
 		for i, a := range c.Args[1:] {
 			name, route, isAccount := wmaAccountArg(a, runner, folded)
 			if !isAccount {
@@ -775,6 +833,8 @@ func wmaAccountMessages(f wmaFile) []wmaMsg {
 				name:     name,
 				route:    route,
 				ellipsis: c.Ellipsis.IsValid(),
+				helper:   helper,
+				helperIn: helperIn,
 			})
 		}
 		return true
@@ -868,13 +928,22 @@ func wmaSpentBefore(firstLine string, argIdx int) (spent int, ok bool) {
 // 261 of its 300 before the account on a message whose own format string was
 // shorter than that.
 //
-// WHAT IT CANNOT SEE is a message rendered inside a `t.Helper()`: go test
-// decorates that line with the CALLER's file and line, so this would charge
-// the helper's own basename instead. Nothing arm 6 grades is in such a helper
-// today, and the one member message that IS (bgSeatAbstainAccount's
-// abstention line, bwrapgitrefslive_test.go) hands its account in as a
-// PARAMETER — a fourth route the key reads not at all, which is
-// ranger-base-x1ofd and carries this wrinkle with it.
+// THE BASENAME, because the check runs `go test` without `-test.fullpath`
+// (its own pins_argv, MEASURED 2026-11-22) and testing's formatter is
+// `filepath.Base(file)` under exactly that condition. A check that ever added
+// that flag would make this whole term an under-read, by the length of the
+// path in front of every member file.
+//
+// AND IT IS THE PREFIX FOR A MESSAGE RENDERED WHERE IT IS WRITTEN, which is a
+// condition and not a simplification: testing's frame walk returns the first
+// NON-helper frame (frameSkip, formatted by callSite — the `decorate` this
+// file's older prose names, renamed upstream; go1.27.3 on this box), so a
+// message rendered inside a `t.Helper()` carries the CALLING file and its line
+// and this term would charge a basename that never appears on the line.
+// wmaRenderedInHelper is which case a message is and wmaHelperPrefix is the
+// other one's charge (ranger-base-q41e8). This docstring said "nothing arm 6
+// grades is in such a helper today" until that bead measured it: eight of the
+// 65 did, and the head comment names them.
 //
 // It is a named reader and not two lines inside arm 6 because this tree does
 // not witness it: MEASURED 2026-11-22 (mutant 8 of docs/notes.d/
@@ -886,6 +955,150 @@ func wmaSpentBefore(firstLine string, argIdx int) (spent int, ok bool) {
 // witnesses.
 func wmaLinePrefix(file string, line int) int {
 	return len([]rune(filepath.Base(file))) + len(":") + len(strconv.Itoa(line)) + len(": ")
+}
+
+// wmaHelperMethod is the one call that makes a function a helper frame, and it
+// is matched by NAME on any receiver — the same way wmaSayers matches a
+// testing method, because a fixture's helper takes its `testing.TB` under
+// whatever name it likes (`t`, `tb`, a field).
+const wmaHelperMethod = "Helper"
+
+// wmaHelperLineDigits is the line-number width charged to a helper-rendered
+// message, and the decision is FOUR (ranger-base-x1ofd). The decorated number
+// is the CALLER's line in the calling member file, and the member set is a set
+// of thousand-line files: MEASURED 2026-11-22, the longest member file is
+// wallunixlive_test.go at 1218 lines and three others are past 1000, so a
+// caller's line is three or four digits and four is the wider of them. It is a
+// constant and not a reading of the files' own lengths because this term rides
+// with the WIDEST BASENAME, which is already a different file from the widest
+// caller — pairing the two would read as a precision this charge does not
+// claim. A member file past 9999 lines is what would make it one short.
+const wmaHelperLineDigits = 4
+
+// wmaWidestMemberBase is the widest basename in the member set, in runes,
+// derived from the set and never typed — for the reason wmaMemberPattern is
+// read rather than retyped and wmaFixedAccount's width is read rather than
+// carried: a basename this file spelled as a literal is a basename that drifts
+// the moment a member file is added or renamed, and a drifted one here grades
+// LESS. Ties keep the first, which the Glob's own order makes deterministic.
+func wmaWidestMemberBase(files []wmaFile) (base string, chars int) {
+	for _, f := range files {
+		if b := filepath.Base(f.path); len([]rune(b)) > chars {
+			base, chars = b, len([]rune(b))
+		}
+	}
+	return base, chars
+}
+
+// wmaHelperPrefix is what go test spends at the head of a message rendered
+// inside a t.Helper(), where the file it prints is NOT the file the message is
+// written in. testing's decorate() writes the first non-helper frame, so the
+// line carries the CALLING member file and its line.
+//
+// IT CHARGES THE WIDEST BASENAME IN THE MEMBER SET (ranger-base-x1ofd's
+// decision, landed under ranger-base-q41e8). The member set's sharpest case is
+// bgSeatAbstainAccount's abstention line, whose whole chain calls t.Helper()
+// with 52 call sites between bgSeatAbstainIfOutside and wwAbstainIfOutside at
+// 7dc3313e — so the actual caller cannot be known statically and a narrower
+// charge under-reads. The widest keeps the rule a FLOOR either way: a line
+// that fits at its own caller and not at the widest is still one caller away
+// from being cut.
+//
+// THE RESIDUAL, named rather than hidden: the first non-helper frame need not
+// be in a member file at all — a non-helper function in another file of
+// internal/posse, called from a member, would decorate the line with its own
+// basename, which this charge would under-read if it were wider. The member
+// set is the one subject this census has (wmaMemberFiles), and a reading over
+// the whole package would be a wider subject than the check's own definition
+// of a member, which is what wmaMemberPattern exists to refuse.
+func wmaHelperPrefix(base string) int {
+	return len([]rune(base)) + len(":") + wmaHelperLineDigits + len(": ")
+}
+
+// wmaChargedPrefix is the prefix term arm 6 charges ONE message, and it is the
+// branch between the two readers above rather than two lines inside the arm —
+// for the reason wmaLinePrefix is a named reader at all: arm 6 is green at
+// either charge over this tree (its own mutant 8), so the branch has to be
+// somewhere arm 7 can red it over a planted message. `how` is the prefix as a
+// reader would meet it on the line, which is also the report's own account of
+// which file it charged.
+func wmaChargedPrefix(m wmaMsg, widestBase string) (chars int, how string) {
+	if m.helper {
+		return wmaHelperPrefix(widestBase), fmt.Sprintf("%s:%s: — %s calls t.Helper(), so go test prints the CALLING member file and the widest basename in the set is what this arm can honestly charge", widestBase, strings.Repeat("N", wmaHelperLineDigits), m.helperIn)
+	}
+	return wmaLinePrefix(m.file, m.line), fmt.Sprintf("%s:%d: ", filepath.Base(m.file), m.line)
+}
+
+// wmaFuncSpan is one function in a member file — a FuncDecl or a FuncLit,
+// because a closure is its own frame — with whether its OWN body marks itself
+// a helper.
+//
+// OWN BODY, AND A NESTED CLOSURE IS NOT IT: t.Helper() marks the function that
+// CALLS it, so a closure inside a helper is an ordinary frame unless it calls
+// t.Helper() itself, and a helper's caller is reached by the CALL stack and
+// not by this lexical one. That distinction is the whole of what this reading
+// had to get right — MEASURED 2026-11-22 over the member set, the sloppier
+// "a Helper() call anywhere under the enclosing FuncDecl" reads nine of arm
+// 6's 65 messages where this reads eight, and the one it adds
+// (wallwatchlive_test.go:614) is written in a test body beside a closure that
+// is a helper, so go test decorates it with its own file and line.
+type wmaFuncSpan struct {
+	pos, end token.Pos
+	name     string
+	helper   bool
+}
+
+// wmaFuncSpans is every function body in a file with that reading.
+func wmaFuncSpans(f *ast.File) []wmaFuncSpan {
+	var out []wmaFuncSpan
+	add := func(body *ast.BlockStmt, name string) {
+		if body == nil {
+			return
+		}
+		helper := false
+		ast.Inspect(body, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.FuncLit:
+				return false // its own frame, and it answers for itself
+			case *ast.CallExpr:
+				if sel, ok := x.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == wmaHelperMethod && len(x.Args) == 0 {
+					helper = true
+				}
+			}
+			return true
+		})
+		out = append(out, wmaFuncSpan{pos: body.Pos(), end: body.End(), name: name, helper: helper})
+	}
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch fn := n.(type) {
+		case *ast.FuncDecl:
+			add(fn.Body, fn.Name.Name)
+		case *ast.FuncLit:
+			add(fn.Body, "a func literal")
+		}
+		return true
+	})
+	return out
+}
+
+// wmaRenderedInHelper reports whether the call at pos is rendered inside a
+// helper, and names the function it is in. The INNERMOST function containing
+// pos is the frame go test starts from, and spans nest, so the innermost is
+// the containing one with the greatest pos.
+func wmaRenderedInHelper(spans []wmaFuncSpan, pos token.Pos) (helper bool, in string) {
+	best := -1
+	for i, s := range spans {
+		if pos < s.pos || pos >= s.end {
+			continue
+		}
+		if best < 0 || s.pos > spans[best].pos {
+			best = i
+		}
+	}
+	if best < 0 {
+		return false, ""
+	}
+	return spans[best].helper, spans[best].name
 }
 
 // wmaConcatParts splits a string expression into its literal and identifier
@@ -1611,8 +1824,12 @@ func TestQATheWallMemberAccountFoldsAreTheOnesThePackageDeclares(t *testing.T) {
 // fixed width <= the check's own budget`. Every term is read out of the tree —
 // the budget out of evidence() (wmaEvidenceBudget), the account out of
 // bgSeatAccount's source (wmaFixedAccount), the prefix out of the message's
-// own position, the preamble out of the format string with every interpolated
-// verb counted as zero. There is no number in this arm and no exemption table,
+// own position or, for a message rendered inside a t.Helper(), out of the
+// widest basename in the member set (wmaChargedPrefix, ranger-base-q41e8: go
+// test decorates such a line with the first NON-helper frame, so the file it
+// prints is the CALLER's and not this one), the preamble out of the format
+// string with every interpolated verb counted as zero. There is no number in
+// this arm and no exemption table,
 // which is what ranger-base-uu303 was filed to avoid: a FITTED preamble bound
 // of 128 reds 11 of the old key's 32 at a precision of 3/11, and it has no
 // derivation at all.
@@ -1640,15 +1857,18 @@ func TestQATheWallMemberAccountFoldsAreTheOnesThePackageDeclares(t *testing.T) {
 // reads as the wall's own answer — and "no error from the command" read
 // directly after `exit status 128` was wrong and not merely redundant.
 // Shortening the tail to 27 characters moved the budget to 267 and left this
-// arm red on nothing, at 34 characters of headroom on the widest literal
-// preamble in the set. MEASURED 2026-11-22, both readings, on this box
-// (linux 7.2.15-1-omarchy, go1.27.3) at tip 3ef2d977.
+// arm red on nothing, at 58 characters of headroom on the widest head it
+// charges. MEASURED 2026-11-22, both readings, on this box
+// (linux 7.2.15-1-omarchy, go1.27.3) at tip 3ef2d977 for the two tails and at
+// 7dc3313e for that headroom, which the head comment prices and this arm's own
+// Logf prints.
 func TestQAEveryWallMemberAccountFitsInsideTheEvidenceBudget(t *testing.T) {
 	t.Parallel()
 	files := wmaMemberFiles(t)
 	budget := wmaEvidenceBudget(t)
 	account, how := wmaFixedAccount(t, files)
-	graded, widest, widestAt := 0, 0, ""
+	widestBase, _ := wmaWidestMemberBase(files)
+	graded, inHelper, widest, widestAt := 0, 0, 0, ""
 	for _, f := range files {
 		for _, m := range wmaAccountMessages(f) {
 			// Arm 2's cases, and arm 2 reports them. A message whose account
@@ -1663,7 +1883,18 @@ func TestQAEveryWallMemberAccountFitsInsideTheEvidenceBudget(t *testing.T) {
 				continue
 			}
 			graded++
-			prefix := wmaLinePrefix(m.file, m.line)
+			// THE PREFIX IS CHARGED TO THE FILE go test WILL PRINT.
+			// testing's decorate() writes the first NON-helper frame, so a
+			// message rendered inside a t.Helper() carries the CALLING member
+			// file and its line and not this one — and with 52 call sites on
+			// the member set's own abstention chain there is no one caller to
+			// read, so the charge is the widest basename in the set
+			// (ranger-base-q41e8; wmaHelperPrefix says why that is the
+			// strictest honest reading and still a floor).
+			prefix, prefixHow := wmaChargedPrefix(m, widestBase)
+			if m.helper {
+				inHelper++
+			}
 			if prefix+spent > widest {
 				widest, widestAt = prefix+spent, fmt.Sprintf("%s:%d", m.file, m.line)
 			}
@@ -1675,9 +1906,9 @@ func TestQAEveryWallMemberAccountFitsInsideTheEvidenceBudget(t *testing.T) {
 			if arrives <= 0 {
 				gets = "NONE of it — the account's own verb is past the slice, so it reaches the bead as nothing at all"
 			}
-			t.Errorf("%s:%d: this t.%s spends %d of `scripts/posse-wall-check`'s %d characters before the seat's account %s even starts (%d for go test's own `%s:%d: ` prefix, which evidence() keeps because it strips only indentation, and %d on the literal preamble — every interpolated verb counted as ZERO, so this is a FLOOR). The account needs %d (%s), so the bead gets %s. ADR 0097 D3's evidence() carries the first `file.go:NN:` line truncated to %d characters and the launcher puts that one line on a P1 bead, so this is ranger-base-mklu0's finding 2: arm 2 is satisfied and the account is cut anyway. THE CHEAPEST FIX IS USUALLY NOT THIS MESSAGE — %s is one function and the single largest consumer in this class, and shortening its fixed tail widens every member's budget by what it gives back (ranger-base-dxaxt). Otherwise move this preamble's prose behind the newline, where D3 says it costs nothing.",
+			t.Errorf("%s:%d: this t.%s spends %d of `scripts/posse-wall-check`'s %d characters before the seat's account %s even starts (%d for go test's own `%s` prefix, which evidence() keeps because it strips only indentation, and %d on the literal preamble — every interpolated verb counted as ZERO, so this is a FLOOR). The account needs %d (%s), so the bead gets %s. ADR 0097 D3's evidence() carries the first `file.go:NN:` line truncated to %d characters and the launcher puts that one line on a P1 bead, so this is ranger-base-mklu0's finding 2: arm 2 is satisfied and the account is cut anyway. THE CHEAPEST FIX IS USUALLY NOT THIS MESSAGE — %s is one function and the single largest consumer in this class, and shortening its fixed tail widens every member's budget by what it gives back (ranger-base-dxaxt). Otherwise move this preamble's prose behind the newline, where D3 says it costs nothing.",
 				m.file, m.line, m.verb, prefix+spent, budget, m.name,
-				prefix, filepath.Base(m.file), m.line, spent,
+				prefix, prefixHow, spent,
 				account, how, gets, budget, wmaAccountFunc)
 		}
 	}
@@ -1694,8 +1925,16 @@ func TestQAEveryWallMemberAccountFitsInsideTheEvidenceBudget(t *testing.T) {
 	if graded < 45 {
 		t.Errorf("this arm graded %d account message(s) against the %d-character budget, want at least 45 (65 on 2026-11-22, the whole of what arm 2 reads). An account reaches a reader by some route this arm no longer reads, or every account in the set has moved somewhere this arm declines to measure — and arm 2's own report is what says which.", graded, budget)
 	}
-	t.Logf("%d member file(s), %d account message(s) graded against %s's %d characters; the account itself needs %d (%s), leaving a message %d; the widest preamble is %d at %s.",
-		len(files), graded, wmaCheck, budget, account, how, budget-account, widest, widestAt)
+	// THE HELPER-RENDERED COUNT IS LOGGED AND NOT FLOORED, which is the one
+	// place this arm departs from arm 2's register and does so on arm 3's
+	// ruling. A floor on it would be a bound on the TREE's prose — a member
+	// set whose helpers all grew their own messages would red it while every
+	// line still fitted — and the term it would be protecting is held
+	// hermetically in arm 7 instead, where a reading that stopped recognising
+	// a helper reds over planted source with no member set at all. 8 of 65 on
+	// 2026-11-22.
+	t.Logf("%d member file(s), %d account message(s) graded against %s's %d characters, %d of them rendered inside a t.Helper() and charged `%s:%s: ` (%d) for the caller go test prints instead of their own position; the account itself needs %d (%s), leaving a message %d; the widest head (prefix + literal preamble) is %d at %s.",
+		len(files), graded, wmaCheck, budget, inHelper, widestBase, strings.Repeat("N", wmaHelperLineDigits), wmaHelperPrefix(widestBase), account, how, budget-account, widest, widestAt)
 }
 
 // ARM 7 — ARM 6'S READERS SAY WHAT THIS FILE SAYS THEY SAY, hermetically,
@@ -1756,6 +1995,117 @@ func TestQATheWallMemberBudgetReadersMatchWhatTheyClaim(t *testing.T) {
 		if got := wmaLinePrefix(c.file, c.line); got != c.want {
 			t.Errorf("wmaLinePrefix(%q, %d) = %d, want %d — arm 6 no longer charges a message for `<basename>:<line>: `, which go test writes and evidence() keeps because `line.strip()` strips indentation and nothing else. That is 261 of ranger-base-mklu0's 300 arriving before its account.",
 				c.file, c.line, got, c.want)
+		}
+	}
+	// THE SAME TERM FOR A HELPER-RENDERED MESSAGE, which is the one go test
+	// decorates with the CALLING file — so it is charged to the widest
+	// basename in the member set and not to the file the message is written in
+	// (ranger-base-q41e8). This tree witnesses it no better than it witnesses
+	// the term above: a mutant answering "not a helper" everywhere charges the
+	// eight such messages 27 to 41 where the decision charges 44, and arm 6 is
+	// green at both. So the reading and the arithmetic are both here.
+	//
+	// THE READING, over one planted file carrying all five shapes. The fourth
+	// and fifth are the pair that decided it: t.Helper() marks the function
+	// that CALLS it, so a closure inside a helper is an ordinary frame and a
+	// closure that marks itself is a helper wherever it sits.
+	helperSrc := `func writtenHere(t *testing.T) {
+	t.Logf("PLAIN FUNC %s", "x")
+}
+
+func marked(t *testing.T) {
+	t.Helper()
+	t.Logf("MARKED FUNC %s", "x")
+}
+
+func markedWithAClosure(t *testing.T) {
+	t.Helper()
+	run := func() {
+		t.Logf("CLOSURE INSIDE A HELPER %s", "x")
+	}
+	run()
+}
+
+func TestPlanted(t *testing.T) {
+	run := func(tb testing.TB) {
+		tb.Helper()
+		tb.Logf("CLOSURE THAT MARKS ITSELF %s", "x")
+	}
+	run(t)
+	t.Logf("BESIDE THAT CLOSURE %s", "x")
+}`
+	_, hf := wmaFixture(t, helperSrc, "")
+	spans := wmaFuncSpans(hf.ast)
+	callAt := func(marker string) (token.Pos, bool) {
+		var at token.Pos
+		found := false
+		ast.Inspect(hf.ast, func(n ast.Node) bool {
+			c, ok := n.(*ast.CallExpr)
+			if !ok || len(c.Args) == 0 {
+				return true
+			}
+			if s, isStr := wmaStringLit(c.Args[0]); isStr && strings.Contains(s, marker) {
+				at, found = c.Pos(), true
+			}
+			return true
+		})
+		return at, found
+	}
+	for _, c := range []struct {
+		marker string
+		helper bool
+		in     string
+		why    string
+	}{
+		{"PLAIN FUNC", false, "writtenHere", "a message in a function that marks nothing is printed at its own file and line"},
+		{"MARKED FUNC", true, "marked", "a message in a t.Helper() is printed at its caller's"},
+		{"CLOSURE INSIDE A HELPER", false, "a func literal", "a closure inside a helper is its OWN frame — it did not call t.Helper(), so go test stops at it"},
+		{"CLOSURE THAT MARKS ITSELF", true, "a func literal", "a closure that calls t.Helper() is a helper frame, and the receiver's name is not the key — this one is `tb`"},
+		{"BESIDE THAT CLOSURE", false, "TestPlanted", "the test body beside a helper closure is not itself a helper. This is wallwatchlive_test.go:614, the one message the sloppier `a Helper() call anywhere under the enclosing FuncDecl` reading adds"},
+	} {
+		at, ok := callAt(c.marker)
+		if !ok {
+			t.Fatalf("the planted helper fixture no longer carries a %q message, so this row grades nothing:\n%s", c.marker, helperSrc)
+		}
+		helper, in := wmaRenderedInHelper(spans, at)
+		if helper != c.helper || in != c.in {
+			t.Errorf("%q: wmaRenderedInHelper = %v,%q want %v,%q — %s. Arm 6 charges a helper-rendered message the widest basename in the member set and every other message its own, so a reading that picks wrong charges the wrong file either way: too few characters for a helper's line (27 to 41 against 44 over the member set on 2026-11-22) or a basename that never appears on the line for anything else.",
+				c.marker, helper, in, c.helper, c.in, c.why)
+		}
+	}
+	// THE WIDEST BASENAME, derived from a planted set and never typed, and the
+	// prefix it charges: 25 + `:` + four digits + `: `.
+	planted := []wmaFile{
+		{path: "internal/posse/short_test.go"},
+		{path: "a/deep/path/the_widest_member_test.go"},
+		{path: "internal/posse/a_middling_name_test.go"},
+	}
+	if base, chars := wmaWidestMemberBase(planted); base != "the_widest_member_test.go" || chars != 25 {
+		t.Errorf("wmaWidestMemberBase over a planted set = %q,%d want %q,25 — arm 6's helper prefix charges the widest BASENAME in the member set and the path in front of it is not part of what go test prints, so a reader comparing whole paths would charge the deepest file instead of the widest-named one.", base, chars, "the_widest_member_test.go")
+	}
+	if got := wmaHelperPrefix("the_widest_member_test.go"); got != 32 {
+		t.Errorf("wmaHelperPrefix(%q) = %d, want 32 — 25 for the basename, 1 for `:`, %d for the line number the decision charges and 2 for `: `. The four digits are the member set's own shape (its longest file is past 1200 lines) and the widest basename is ranger-base-x1ofd's decision, which is a FLOOR: a line that fits at its own caller and not at the widest is one caller away from being cut.",
+			"the_widest_member_test.go", got, wmaHelperLineDigits)
+	}
+	// AND THE BRANCH BETWEEN THE TWO, over a planted message, because that is
+	// the half arm 6 cannot red: both charges fit the member set today, so a
+	// mutant that takes the helper arm out leaves arm 6 green and the term
+	// quietly wrong by 14 characters.
+	for _, c := range []struct {
+		name  string
+		msg   wmaMsg
+		chars int
+		names string
+	}{
+		{"a message rendered where it is written is charged its own position",
+			wmaMsg{file: "internal/posse/mid_test.go", line: 751}, 17, "mid_test.go:751: "},
+		{"a helper-rendered message is charged the widest basename and a four-digit line",
+			wmaMsg{file: "internal/posse/mid_test.go", line: 751, helper: true, helperIn: "aHelper"}, 32, "the_widest_member_test.go:NNNN: "},
+	} {
+		chars, how := wmaChargedPrefix(c.msg, "the_widest_member_test.go")
+		if chars != c.chars || !strings.HasPrefix(how, c.names) {
+			t.Errorf("%s: wmaChargedPrefix = %d,%q want %d and a report opening %q — arm 6 adds this term to every message's preamble, and it is charged to the file `go test` will PRINT: testing's decorate() writes the first NON-helper frame, so a helper's own basename is a file that never appears on the line (ranger-base-q41e8).",
+				c.name, chars, how, c.chars, c.names)
 		}
 	}
 	// THE ACCOUNT'S FIXED WIDTH, read out of a planted bgSeatAccount: the
