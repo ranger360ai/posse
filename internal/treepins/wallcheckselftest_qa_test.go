@@ -727,19 +727,76 @@ func TestQATheWallCheckNonMemberCeilingIsTheRecords(t *testing.T) {
 		t.Errorf("%s no longer carries the non-member roster paragraph (the one anchored on %q), so the %s in the body is the size of a set this record does not name. The number is held to nothing again: a bump raises it on both sides, the floor drops by one pin, and every reader of the run stays green (ranger-base-5pkix F5, from ranger-base-c75wa).",
 			wcsADR, wcsRosterAnchor, "nonmember_ceiling="+ceiling)
 	} else {
+		// AND THE NAMES ARE RESOLVED, AND READ OFF THE BULLETS
+		// (ranger-base-zpagn F6). The count above was "at least `ceiling`
+		// backticked `Test…` names somewhere in this section", which is not
+		// the claim "the roster names `ceiling` non-members". MEASURED
+		// 2026-11-23, each on top of a 3 -> 4 bump of the body AND the ADR,
+		// alone:
+		//
+		//	a 4th name added as PROSE, in a sentence that names it in order
+		//	to EXCLUDE it ("Unlike `TestLiveWallVenueA`, which execs a bwrap
+		//	and DOES print the marker, none of the three…")   -> GREEN
+		//	a 4th BULLET naming `TestZzzThisTestDoesNotExistAnywhere` -> GREEN
+		//
+		// So a ceiling bump paid for itself by naming a test that is a
+		// member, or one that is nowhere in the tree. The names were
+		// resolved against nothing.
+		//
+		// Three questions now, and each is the record's own sentence read
+		// back off the tree. A rostered name must be DECLARED in the package
+		// the check runs; it must be SELECTED by the check's own
+		// `member_pattern` (wmaMemberPattern, read and never retyped),
+		// because a test the filter does not select is not in the
+		// denominator the ceiling is subtracted from; and it must reach
+		// NONE of ADR 0096 D3's gate spellings, because the gate is the
+		// marker's only emitter (ADR 0097 D4) — a rostered test that reaches
+		// it prints the marker and so IS a member, which is the record's own
+		// "none of the three execs a bwrap, so none reaches D4's gate and
+		// none can print the marker" asked of the source. The reach is
+		// wallnestgate_qa_test.go's, at its measured depth, because two
+		// spellings of "does this pin reach the gate" are two answers about
+		// one member set.
+		//
+		// The bullets and not the paragraphs: the section's opening sentence
+		// and its closing one are prose ABOUT the set, so a name there is a
+		// name the sentence is free to be excluding. The list is where the
+		// record makes a claim per entry, and that is the half a bump has to
+		// extend.
+		p := wngParsePkg(t)
+		member := wmaMemberPattern(t)
 		named := map[string]bool{}
-		for _, m := range wcsTestName.FindAllStringSubmatch(section, -1) {
+		for _, m := range wcsTestName.FindAllStringSubmatch(wcsRosterBullets(section), -1) {
 			named[m[1]] = true
 		}
-		if len(named) < want {
-			names := make([]string, 0, len(named))
-			for n := range named {
-				names = append(names, n)
-			}
-			sort.Strings(names)
-			t.Errorf("%s says nonmember_ceiling=%d and %s's roster names %d test(s) (%s). The number is the SIZE of that roster, so a ceiling past it is a floor lowered by the difference with nothing to audit it against: the commit that raises the ceiling is the commit that names the non-member it is making room for (ADR 0097's amendment, ranger-base-c75wa; the hole is ranger-base-5pkix F5).",
-				wcsScript, want, wcsADR, len(named), strings.Join(names, ", "))
+		names := make([]string, 0, len(named))
+		for n := range named {
+			names = append(names, n)
 		}
+		sort.Strings(names)
+		var resolved []string
+		for _, n := range names {
+			decls := p.byName[n]
+			switch {
+			case len(decls) == 0:
+				t.Errorf("%s's roster names `%s` and the package the check runs (%s) declares no such test, so that bullet buys the ceiling a slot nothing fills: the floor on the member count drops by one with every reader of the run green. Name the test that is really going dark, or lower nonmember_ceiling (ranger-base-zpagn F6).",
+					wcsADR, n, wmaPkgGlob)
+			case !member.MatchString(n):
+				t.Errorf("%s's roster names `%s`, which the check's own member_pattern does not select — so it is not in the set `nonmember_ceiling` is subtracted FROM, and rostering it lowers the floor by one for a test the venue never runs (ranger-base-zpagn F6).",
+					wcsADR, n)
+			case wcsReachesTheGate(p, decls):
+				t.Errorf("%s's roster names `%s` as a deliberate non-member, and it reaches %v within %d hop(s) — the gate is the membership MARKER's only emitter (ADR 0097 D4), so that test prints the marker and IS a member. A ceiling bump paid for by a member is the floor lowered twice: once for the slot and once for the pin still counted (ranger-base-zpagn F6).",
+					wcsADR, n, wngGateSpellings(), wngReachDepth)
+			default:
+				resolved = append(resolved, n)
+			}
+		}
+		if len(resolved) < want {
+			t.Errorf("%s says nonmember_ceiling=%d and %s's roster BULLETS name %d test(s) that resolve to a selected, ungated test in %s (%s, out of %d name(s) read). The number is the SIZE of that roster, so a ceiling past it is a floor lowered by the difference with nothing to audit it against: the commit that raises the ceiling is the commit that names the non-member it is making room for (ADR 0097's amendment, ranger-base-c75wa; the holes are ranger-base-5pkix F5 and ranger-base-zpagn F6).",
+				wcsScript, want, wcsADR, len(resolved), wmaPkgGlob, strings.Join(resolved, ", "), len(named))
+		}
+		t.Logf("nonmember_ceiling=%d; the roster's bullets name %d test(s), %d of them resolving to a selected, ungated test in %s: %v",
+			want, len(named), len(resolved), wmaPkgGlob, resolved)
 	}
 
 	// The premise. A pin over a document is satisfied by reading an empty one.
@@ -762,6 +819,49 @@ var wcsTestName = regexp.MustCompile("`(Test[A-Za-z0-9_]+)`")
 // bullet list under it: from the anchor to the next bold paragraph opener,
 // which is how that record separates its paragraphs. "" when the anchor is
 // gone, which the caller reports rather than passing over.
+// wcsRosterBullets returns the roster section's BULLET LIST and nothing else:
+// every line opening a bullet, plus a bullet's indented continuation lines,
+// which is how that record wraps an entry that names two tests.
+//
+// WHY, said as the rule and not as the mutant (ranger-base-zpagn F6): the
+// paragraph that opens the section and the one that closes it are prose ABOUT
+// the set — "None of the three execs a bwrap…" — so a `Test…` name there may
+// be a name the sentence is naming in order to EXCLUDE it, and a count over
+// the whole section pays a ceiling bump for one. The list is where the record
+// makes a claim per entry.
+func wcsRosterBullets(section string) string {
+	var out []string
+	in := false
+	for _, line := range strings.Split(section, "\n") {
+		switch {
+		case strings.HasPrefix(strings.TrimLeft(line, " \t"), "- "):
+			in = true
+			out = append(out, line)
+		case in && strings.TrimSpace(line) != "" && (strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "\t")):
+			out = append(out, line)
+		default:
+			in = false
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// wcsReachesTheGate reports whether any declaration of this name reaches ADR
+// 0096 D3's nest gate — wallnestgate_qa_test.go's reach, at its measured
+// depth, and not a second spelling of it.
+func wcsReachesTheGate(p wngPkg, decls []wngDecl) bool {
+	for _, d := range decls {
+		for _, r := range p.reach(d.fn, d.path, wngReachDepth) {
+			for n := range wngCallees(r) {
+				if wngGateNames[n] {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func wcsRosterSection(adr string) string {
 	i := strings.Index(adr, wcsRosterAnchor)
 	if i < 0 {

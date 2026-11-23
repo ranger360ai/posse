@@ -315,6 +315,15 @@ ranger-base-dudu4's half of this class, beside the censuses
 `internal/treepins/wallmemberaccount_qa_test.go` already runs over the same
 file set.
 
+The roster is the BULLET LIST above, one entry per non-member, and the entries
+are resolved: `internal/treepins/wallcheckselftest_qa_test.go` reads the
+bullets and requires each name to be a test the check's own `member_pattern`
+selects, declared in the package it runs, reaching none of D4's gate
+spellings — because a rostered test that reaches the gate prints the marker and
+is a member. So the two paragraphs around the list are prose about the set and
+pay for no bump, and a bump that cannot name a fourth test which satisfies all
+three is refused (ranger-base-zpagn F6).
+
 **MEASURED 2026-11-22**, D1's venue on bd7891ac (linux 7.2.15-1-omarchy, bwrap
 0.13.1, go1.27.3, 16 cores, cold GOCACHE, `--unshare-user --unshare-pid --proc
 /proc`, private /tmp and /var/tmp, `POSSE_WALL_VENUE=1`): 118s, `go test`
