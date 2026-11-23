@@ -129,11 +129,17 @@ package treepins
 // front of it — wallclaudeprojectsattack_qa_test.go:386, the line mklu0
 // landed on purpose, and wallunixlive_test.go:237, :526 and :1130, whose
 // `the seat exited badly: %s\nargv: bwrap %s` is three more of the same shape
-// from a different lineage. NOTHING in the member set puts an account after a
-// newline. So the old rule was never a strictness the tree was paying for: it
-// was a rule that could only red the shape the house prescribes, held off by a
-// key too narrow to reach any of the four — and the three files it did reach
-// folded everything onto one line for a rule the house does not hold. The two
+// from a different lineage. It is SIX at 814776ed (MEASURED 2026-11-22,
+// ranger-base-yem73): ranger-base-72z36 (a25855a0) moved two more accounts in
+// front of their own newline — wallclaudeprojects_qa_test.go:445 and
+// wallclaudeprojectsattack_qa_test.go:403 — which is the same shape a third
+// time. Arm 2's own Logf names the current set, and that is the reading to
+// take; this paragraph is e5221de6's, the tip that decided the rule. NOTHING
+// in the member set puts an account after a newline, at either tip. So the old
+// rule was never a strictness the tree was paying for: it was a rule that
+// could only red the shape the house prescribes, held off by a key too narrow
+// to reach any of the four — and the three files it did reach folded
+// everything onto one line for a rule the house does not hold. The two
 // readings could not both stand, and that is why deciding was the same edit.
 //
 // AND THE BOTH-WAYS READING, nine mutants one at a time (MEASURED 2026-11-22,
@@ -224,17 +230,19 @@ package treepins
 // of REASONING that one edit to one function gave back. At the old tail the
 // derived budget was 95 and arm 6 red 28 of 65; at today's 27-character tail
 // it is 267 and arm 6 reds nothing, with 58 characters of headroom on the
-// widest HEAD it charges: 209 at internal/posse/bwrapgitrefslive_test.go:598,
+// widest HEAD it charges: 209 at internal/posse/bwrapgitrefslive_test.go:624,
 // which is 30 of go test's own prefix plus a 179-character literal preamble
-// (MEASURED 2026-11-22 at 7dc3313e, and the figure the arm's own Logf prints
-// — read that, not this line). Until ranger-base-q41e8 this sentence read
-// "34 … on the widest literal preamble in the set (233,
-// bwrapseatstorelive_test.go:751)" and was wrong twice over: 233 was
-// ranger-base-uu303's and ranger-base-dxaxt's reading of a row that
-// ranger-base-bj1hh then shortened out of the account-carrying set
-// altogether — a figure carried across the landing that falsified it — and it
-// named the preamble alone while the headroom beside it was computed from
-// prefix PLUS preamble, which is the sum the rule actually bounds.
+// (MEASURED 2026-11-22 at 814776ed — the same 209 at :598 at 7dc3313e, where
+// ranger-base-dxaxt read it, and ranger-base-72z36's 26 added lines are what
+// moved it; and the figure the arm's own Logf prints — read that, not this
+// line). Until ranger-base-q41e8 this sentence read "34 … on the widest
+// literal preamble in the set (233, bwrapseatstorelive_test.go:751)" and was
+// wrong twice over: 233 was ranger-base-uu303's and ranger-base-dxaxt's
+// reading of a row that ranger-base-bj1hh then shortened out of the
+// account-carrying set altogether — a figure carried across the landing that
+// falsified it — and it named the preamble alone while the headroom beside it
+// was computed from prefix PLUS preamble, which is the sum the rule actually
+// bounds.
 // So ORDER WITHIN THE FIRST LINE IS PINNED, as a NECESSARY condition and not a
 // sufficient one: three member messages blow the 300 on interpolated fixture
 // paths no static census can see (ranger-base-bj1hh), and sufficiency needs
@@ -261,17 +269,39 @@ package treepins
 // AND IT WAS NEVER ONE MESSAGE. The decision was taken for the one line
 // ranger-base-x1ofd's parameter route adds, on the reading that nothing arm 6
 // graded was in such a helper — which is what wmaLinePrefix's docstring said
-// too. MEASURED 2026-11-22 at 7dc3313e, with that route NOT in this tree:
-// EIGHT of the 65 messages arm 6 already grades are rendered inside a
-// t.Helper(), so the term was charged to the wrong file eight times over
-// before the route that raised the question existed. Four are named helpers
-// (wallwatchlive_test.go's wwWaitKilled at :300 and :303 and launchOn at :139
-// and :143), one is a fixture helper (bwrapgitrefslive_test.go's
-// packUnderALiveSeat at :841), and three are closures that call t.Helper()
-// themselves (wallclaudeprojectsattack_qa_test.go:386 and :389,
+// too. RE-READ 2026-11-22 at 814776ed (ranger-base-yem73), the tip this
+// paragraph's figures are now taken at: EIGHT of the 65 messages arm 6 graded
+// BEFORE that route are rendered inside a t.Helper(), so the term was charged
+// to the wrong file eight times over before the route that raised the question
+// existed — NINE of 66 with the route in the tree, the ninth being its own and
+// priced in the paragraph above, which is the count arm 6's Logf prints and
+// the number to read. Four of the eight are named helpers (wallwatchlive_test.go's wwWaitKilled at
+// :300 and :303 and launchOn at :139 and :143), one is a fixture helper
+// (bwrapgitrefslive_test.go's packUnderALiveSeat at :867), and three are
+// closures that call t.Helper() themselves
+// (wallclaudeprojectsattack_qa_test.go:386 and :403,
 // wallwatchlive_test.go:604). It reds nothing: the widest of the eight is
-// attack:389, which the widest basename moves from 206 to 209 of the same
-// 267, so the headroom above is unchanged by this landing.
+// wwWaitKilled's line at wallwatchlive_test.go:303, which the widest basename
+// moves from 110 to 124 of the same 267 — and the widest head in the set is
+// not one of the eight at all (209 at bwrapgitrefslive_test.go:624, charged
+// its own 30), so this term moves no headroom anywhere.
+//
+// THOSE LINE NUMBERS WERE READ ONCE AT 7dc3313e AND LANDED AFTER THE LANDING
+// THAT MOVED THEM, which is this file's own warning one paragraph up taken a
+// second time (ranger-base-x1ofd read them, ranger-base-q41e8 landed them,
+// ranger-base-yem73 found them). ranger-base-72z36 (a25855a0) landed BEFORE
+// q41e8 (6706f7c0): its 26 added lines in bwrapgitrefslive_test.go moved
+// packUnderALiveSeat's message from :841 to :867, and its third argument swap
+// put attack's Logf account in front of that message's newline, which moved
+// :389 to :403 AND collapsed the head this paragraph called the widest from
+// 206 to 82. So every figure in the sentence above was false the day it
+// landed, including the one — attack:389's 206 to 209 — that was a true
+// reading of the tree it was taken on. A figure read at one tip and typed at
+// another is this file's recurring cost, and what it buys is nothing: arms 2
+// and 6 now LIST these messages by file and line in their own Logf lines — the
+// deferred set and the helper-rendered set, the two figures this bead was filed
+// about — so the reading is a `-v` run away and no paragraph here has to be
+// the record of one.
 //
 // AND THE TERM IS STILL WITNESSED HERMETICALLY AND NOT BY THE TREE, for
 // ranger-base-dxaxt's own reason one reading on (its mutant 8: the whole
@@ -1144,13 +1174,17 @@ const wmaHelperMethod = "Helper"
 // wmaHelperLineDigits is the line-number width charged to a helper-rendered
 // message, and the decision is FOUR (ranger-base-x1ofd). The decorated number
 // is the CALLER's line in the calling member file, and the member set is a set
-// of thousand-line files: MEASURED 2026-11-22, the longest member file is
-// wallunixlive_test.go at 1218 lines and three others are past 1000, so a
-// caller's line is three or four digits and four is the wider of them. It is a
-// constant and not a reading of the files' own lengths because this term rides
-// with the WIDEST BASENAME, which is already a different file from the widest
-// caller — pairing the two would read as a precision this charge does not
-// claim. A member file past 9999 lines is what would make it one short.
+// of thousand-line files: MEASURED 2026-11-22 at 814776ed, the longest member
+// file is wallunixlive_test.go at 1217 lines and two others are past 1000
+// (wallclaudesessionstate_qa_test.go at 1200, bwrapgitrefslive_test.go at
+// 1026), so a caller's line is three or four digits and four is the wider of
+// them — and it stays four while the longest member file is any length between
+// 1000 and 9999, which is why this reading is a sanity check and not the
+// decision. It is a constant and not a reading of the files' own lengths
+// because this term rides with the WIDEST BASENAME, which is already a
+// different file from the widest caller — pairing the two would read as a
+// precision this charge does not claim. A member file past 9999 lines is what
+// would make it one short.
 const wmaHelperLineDigits = 4
 
 // wmaWidestMemberBase is the widest basename in the member set, in runes,
@@ -1516,7 +1550,13 @@ func TestQAEveryWallMemberSeatLaunchRendersItsChildsError(t *testing.T) {
 func TestQAEveryWallMemberMessageCarriesItsSeatAccountOnTheFirstLine(t *testing.T) {
 	t.Parallel()
 	files := wmaMemberFiles(t)
-	withAccounts, read, deferred := 0, 0, 0
+	withAccounts, read := 0, 0
+	// THE DEFERRED SET IS LISTED AND NOT COUNTED (ranger-base-yem73): the
+	// floor below names its own examples as a literal, because the state it
+	// reds in is the state where the tree has none to print — and a typed list
+	// goes stale at the next landing that moves a line, which is twice now.
+	// The Logf carries the live set so the reading is a `-v` run away.
+	var deferred []string
 	routes := map[string]int{}
 	for _, f := range files {
 		msgs := wmaAccountMessages(f)
@@ -1543,7 +1583,7 @@ func TestQAEveryWallMemberMessageCarriesItsSeatAccountOnTheFirstLine(t *testing.
 			case strings.ContainsAny(m.text, "\n\r"):
 				// The shape the rule before this one refused, and the
 				// reason the floor below exists.
-				deferred++
+				deferred = append(deferred, fmt.Sprintf("%s:%d", m.file, m.line))
 			}
 		}
 	}
@@ -1578,11 +1618,11 @@ func TestQAEveryWallMemberMessageCarriesItsSeatAccountOnTheFirstLine(t *testing.
 	// re-tightening would be green here and would red four messages whose
 	// shape ADR 0097 D3 prescribes — which is the state ranger-base-momix
 	// found and the reason that re-tightening is easy to type.
-	if deferred == 0 {
-		t.Errorf("this arm read %d account message(s) that defer their prose to a second line, want at least 1 (4 on 2026-11-22: wallclaudeprojectsattack_qa_test.go:386 and wallunixlive_test.go:237, :526, :1130). Those four are what distinguish this arm's rule from `no newline at all`; with none of them in the tree, nothing here witnesses that the rule is positional and arm 3's planted rows are the whole of it.", deferred)
+	if len(deferred) == 0 {
+		t.Errorf("this arm read %d account message(s) that defer their prose to a second line, want at least 1 (6 at 814776ed on 2026-11-22: wallclaudeprojects_qa_test.go:445, wallclaudeprojectsattack_qa_test.go:386 and :403, and wallunixlive_test.go:237, :526 and :1130 — four of them ranger-base-momix's reading at e5221de6, the other two ranger-base-72z36's, and the line numbers are this tip's and not a promise about yours: the Logf below lists whatever the tree holds now). Those are what distinguish this arm's rule from `no newline at all`; with none of them in the tree, nothing here witnesses that the rule is positional and arm 3's planted rows are the whole of it.", len(deferred))
 	}
-	t.Logf("%d member file(s), %d of them carrying a seat account, %d account message(s) read (%d by a runner local, %d by a folded local, %d by an inline fold, %d by a parameter), %d of which defer prose to a second line with the account in front of it.",
-		len(files), withAccounts, read, routes["runner local"], routes["folded local"], routes["inline fold"], routes["parameter"], deferred)
+	t.Logf("%d member file(s), %d of them carrying a seat account, %d account message(s) read (%d by a runner local, %d by a folded local, %d by an inline fold, %d by a parameter), %d of which defer prose to a second line with the account in front of it: %v",
+		len(files), withAccounts, read, routes["runner local"], routes["folded local"], routes["inline fold"], routes["parameter"], len(deferred), deferred)
 }
 
 // ARM 3 — THE RULES SAY NO. Both rules driven over planted source, each with
@@ -2157,7 +2197,12 @@ func TestQAEveryWallMemberAccountFitsInsideTheEvidenceBudget(t *testing.T) {
 	budget := wmaEvidenceBudget(t)
 	account, how := wmaFixedAccount(t, files)
 	widestBase, _ := wmaWidestMemberBase(files)
-	graded, inHelper, widest, widestAt := 0, 0, 0, ""
+	graded, widest, widestAt := 0, 0, ""
+	// LISTED AND NOT COUNTED, for ranger-base-yem73's reason: the head
+	// comment's account of which eight messages these are went stale at the
+	// landing before the one that typed it, and a count cannot be checked
+	// against a list. The floor stays off it (see the Logf below for why).
+	var inHelper []string
 	for _, f := range files {
 		for _, m := range wmaAccountMessages(f) {
 			// Arm 2's cases, and arm 2 reports them. A message whose account
@@ -2182,7 +2227,7 @@ func TestQAEveryWallMemberAccountFitsInsideTheEvidenceBudget(t *testing.T) {
 			// strictest honest reading and still a floor).
 			prefix, prefixHow := wmaChargedPrefix(m, widestBase)
 			if m.helper {
-				inHelper++
+				inHelper = append(inHelper, fmt.Sprintf("%s:%d (in %s, head %d)", m.file, m.line, m.helperIn, prefix+spent))
 			}
 			if prefix+spent > widest {
 				widest, widestAt = prefix+spent, fmt.Sprintf("%s:%d", m.file, m.line)
@@ -2223,9 +2268,11 @@ func TestQAEveryWallMemberAccountFitsInsideTheEvidenceBudget(t *testing.T) {
 	// hermetically in arm 7 instead, where a reading that stopped recognising
 	// a helper reds over planted source with no member set at all. 9 of 66 on
 	// 2026-11-22, the ninth being ranger-base-x1ofd's parameter-route message,
-	// which was 8 of 65 before that route landed.
-	t.Logf("%d member file(s), %d account message(s) graded against %s's %d characters, %d of them rendered inside a t.Helper() and charged `%s:%s: ` (%d) for the caller go test prints instead of their own position; the account itself needs %d (%s), leaving a message %d; the widest head (prefix + literal preamble) is %d at %s.",
-		len(files), graded, wmaCheck, budget, inHelper, widestBase, strings.Repeat("N", wmaHelperLineDigits), wmaHelperPrefix(widestBase), account, how, budget-account, widest, widestAt)
+	// which was 8 of 65 before that route landed — and the Logf LISTS them,
+	// which the head comment's own copy of that list could not do and went
+	// stale for (ranger-base-yem73).
+	t.Logf("%d member file(s), %d account message(s) graded against %s's %d characters, %d of them rendered inside a t.Helper() and charged `%s:%s: ` (%d) for the caller go test prints instead of their own position: %v; the account itself needs %d (%s), leaving a message %d; the widest head (prefix + literal preamble) is %d at %s.",
+		len(files), graded, wmaCheck, budget, len(inHelper), widestBase, strings.Repeat("N", wmaHelperLineDigits), wmaHelperPrefix(widestBase), inHelper, account, how, budget-account, widest, widestAt)
 }
 
 // ARM 7 — ARM 6'S READERS SAY WHAT THIS FILE SAYS THEY SAY, hermetically,
