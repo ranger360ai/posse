@@ -337,6 +337,70 @@ package treepins
 // and the sloppier reading adds exactly one message, with arm 6 GREEN under
 // both mutants and arm 7 red under each.
 //
+// AND THE NEWLINE NEED NOT BE IN THE TEXT (ranger-base-thrn2, from
+// ranger-base-whpuk's verify of ranger-base-momix). The positional rule above
+// read the FORMAT STRING's literal newlines and nothing else, so a newline
+// arriving inside an argument rendered before the account was invisible to
+// it: `wmaAccountBeforeNewline` opened with one `strings.IndexAny` and
+// returned (before, readable) = (true, true) for every format carrying none
+// of its own. go test ends the line it prints at the first newline of the
+// RENDERED message, so a `%s` over a value with one puts the account on line
+// 2 and evidence() carries a symptom, a colon and nothing — ranger-base-a688i
+// again, by the one route the rule could not see. The doc comment made the
+// opposite claim in its place ("the whole of what reaches a bead",
+// "firstLine is what evidence() would carry"), and a pin that is wrong about
+// what it measures is live (ADR 0006 section 6).
+//
+// THE WIDENING IS BY SUBJECT AND THE REST IS A FLOOR, which is this file's own
+// division everywhere else. The one argument in this census's subject that
+// carries newlines BY CONSTRUCTION is the seat's UNFOLDED words — a child's
+// stdout and stderr, which is what wwOneLine exists to fold — so the rule
+// reads that class (wmaUnfoldedLocals, two routes) and holds a message to the
+// stricter rule when it renders them in front of the account with a verb that
+// does not escape them. A newline arriving inside any OTHER argument is out of
+// reach, and that is the NEWLINE-DIRECTION TWIN of arm 6's "every interpolated
+// verb counted as ZERO, so this is a FLOOR": deciding whether a `%s` over
+// `c.name` or a fixture path can break a line means reading a runtime value,
+// and the ORDER WITHIN THE FIRST LINE paragraph above already records the
+// house answer to that class — sufficiency needs each member's messages
+// rendered under its fixture, "a venue ranger-base-uu303 records rather than
+// files, so the next attempt does not re-try a static rule". A static census
+// that graded those arguments would be judging someone else's prose by
+// variable name, which is the register this file refuses when it declines an
+// exemption table.
+//
+// MEASURED 2026-11-23 (linux 7.2.15-1-omarchy, go1.27.3, 16 cores, at
+// ebfc4869, load 1.7-3.4) over the member set, which is what decided the
+// SHAPE of the widening and not the prose: of the 66 account messages, 60
+// carry no literal newline and 29 of those render something before the
+// account. ONE of the 29 is in the keyed class — bwrapseatstorelive_test.go's
+// `out`, bsLive.in's raw middle result — and it is GREEN because it is
+// quoted. The other 38 pre-account arguments are 23 `%s` over a case label, a
+// digest slice, a fixture path or a wait token, 11 `%d` over an exit code and
+// 4 `%q`, none of them in the class and all of them the floor. So the
+// widening reds nothing today, which is every widening this census has taken:
+// it closes the route the next one would have escaped by. Arm 2's Logf names
+// the live set — read that, not this paragraph.
+//
+// AND THE BOTH-WAYS READING, eight mutants one at a time plus the pair
+// (MEASURED 2026-11-23, docs/notes.d/ranger-base-thrn2.md carries the battery
+// and its output): the unmutated arms green; the member set's one quoted row
+// unquoted reds arm 2 at bwrapseatstorelive_test.go:506, which is what makes
+// the green a READING and not an unreached key; the widening dropped from
+// wmaAccountBeforeNewline reds arm 3's new row with arm 2 GREEN over the tree;
+// the key's runner arm and its waiter arm each red arm 3's rows for that
+// route and nothing over the tree, which is why the waiter route — witnessed
+// by no member message, the way the unreadable-verb case is — is held
+// hermetically; every verb reading as escaping, and none of them, both red arm
+// 3, and the second ALSO reds arm 2 at :506 unmutated, so the `%q`-against-
+// `%s` discriminator is witnessed live in one direction; the two wrappers no
+// longer read through reds arm 3's wrapper row alone. The account
+// SUBTRACTION reds nothing anywhere over this tree and is arm 3's row only:
+// no member file renders a name that is an account elsewhere in it in front
+// of another account, so that under-read is held hermetically too, and the
+// pair that is the whole finding — :506 unquoted WITH the widening dropped —
+// is green in every arm, which is the state ranger-base-whpuk read.
+//
 // IT ENUMERATES A DISCOVERED FILE SET (the Glob below), so it is in this
 // package's one-package-census class and is doored by `make treepins-check` —
 // the complement door, which is this package minus the priced table in
@@ -427,22 +491,93 @@ func wmaVerbs(s string) int {
 	return len(wmaVerbRe.FindAllString(strings.ReplaceAll(s, "%%", ""), -1))
 }
 
-// wmaAccountBeforeNewline answers, for a format string and the 0-based index
-// of the account among the arguments that follow it, whether the account is
-// rendered BEFORE the first newline — which is the whole of what reaches a
-// bead (ADR 0097 D3, and see the head comment for why this is the rule and
-// "no newline at all" was not). `readable` is false when the text uses a verb
-// whose positions cannot be read; the caller then holds the message to the
-// stricter rule. firstLine is what evidence() would carry.
-func wmaAccountBeforeNewline(text string, argIdx int) (before, readable bool, firstLine string) {
+// wmaVerbAt names the verb that renders argument argIdx, read off the text
+// positionally — so it means what it says only where wmaUnreadableVerbRe does
+// not match. `%%` is removed first for wmaVerbs's reason.
+func wmaVerbAt(text string, argIdx int) (verb string, ok bool) {
+	vs := wmaVerbRe.FindAllString(strings.ReplaceAll(text, "%%", ""), -1)
+	if argIdx < 0 || argIdx >= len(vs) {
+		return "", false
+	}
+	return vs[argIdx], true
+}
+
+// wmaVerbEscapes reports whether a verb renders a string with its newlines
+// escaped or encoded away, so that the VALUE cannot put a newline in the line
+// whatever it holds: `%q` quotes it, `%x`/`%X` hex it. Nothing else is in the
+// set — `%d` over a []byte is newline-free too, and is left out because a
+// decimal dump of a seat's words is prose nobody writes and a set that reads
+// "cannot carry a newline" per argument TYPE would need the types this census
+// does not have. Left out it over-reads, which is the direction a floor goes.
+func wmaVerbEscapes(verb string) bool {
+	if verb == "" {
+		return false
+	}
+	switch verb[len(verb)-1] {
+	case 'q', 'x', 'X':
+		return true
+	}
+	return false
+}
+
+// wmaLineCause is why an account does or does not reach the line a bead
+// carries, and it is a VALUE rather than two booleans because arm 2 reports a
+// different thing for each cause: a cause the arm re-derived from the text
+// would be a second spelling of this function's own reading, which is the
+// register this file refuses everywhere else.
+type wmaLineCause string
+
+const (
+	// the account is rendered on the line evidence() carries
+	wmaLineOK wmaLineCause = ""
+	// it is written behind a newline this census can point at, in the text
+	wmaLineBehind wmaLineCause = "behind a newline in the format"
+	// the verbs' argument positions cannot be read off the text at all
+	wmaLineUnreadable wmaLineCause = "unreadable verb positions"
+	// a newline arrives inside an argument rendered before it
+	wmaLineUnfolded wmaLineCause = "unfolded words before the account"
+)
+
+// wmaAccountBeforeNewline answers, for a format string, the 0-based index of
+// the account among the arguments that follow it, and the indices of the
+// arguments that render the seat's unfolded words unescaped, whether the
+// account is rendered BEFORE the first newline of the line a bead will carry
+// (ADR 0097 D3, and see the head comment for why this is the rule and "no
+// newline at all" was not).
+//
+// A cause of wmaLineUnfolded or wmaLineUnreadable is the stricter rule: the
+// account's arrival depends on something no reading of the format text
+// decides, and this census will not guess. The first is a newline arriving
+// inside a VALUE, which ends the line go test prints just as a literal one
+// does.
+//
+// firstLine is the first line of the FORMAT, which is the line evidence()
+// carries exactly when the cause is wmaLineOK: the only newlines this function
+// can see are the ones written in the text, and `raw` is how the key tells it
+// about the one class of argument it knows can bring its own. A newline
+// arriving inside any OTHER argument — a fixture path, a case label, a wait
+// token — is out of reach, which is the newline-direction twin of arm 6's
+// "every interpolated verb counted as ZERO, so this is a FLOOR".
+func wmaAccountBeforeNewline(text string, argIdx int, raw []int) (cause wmaLineCause, firstLine string) {
 	i := strings.IndexAny(text, "\n\r")
-	if i < 0 {
-		return true, true, text
+	firstLine = text
+	if i >= 0 {
+		firstLine = text[:i]
 	}
-	if wmaUnreadableVerbRe.MatchString(text) {
-		return false, false, text[:i]
+	if (i >= 0 || len(raw) > 0) && wmaUnreadableVerbRe.MatchString(text) {
+		return wmaLineUnreadable, firstLine
 	}
-	return argIdx < wmaVerbs(text[:i]), true, text[:i]
+	// The LITERAL fold first, because it is the specific report: the account
+	// is written behind a newline this census can point at.
+	if i >= 0 && argIdx >= wmaVerbs(firstLine) {
+		return wmaLineBehind, firstLine
+	}
+	for _, r := range raw {
+		if r < argIdx {
+			return wmaLineUnfolded, firstLine
+		}
+	}
+	return wmaLineOK, firstLine
 }
 
 // wmaMemberPattern reads the member pattern out of the wall check. One line,
@@ -714,12 +849,15 @@ func wmaSaid(fn *ast.FuncDecl, name string) bool {
 	return said
 }
 
-// wmaAccountLocals are the locals a call site binds to a seat runner's
-// account — the LAST string result of a function that launches a seat. One
-// hop, which is every spelling the member set uses and the same depth
-// treewidedoor_qa_test.go's parameter hop reads.
-func wmaAccountLocals(f wmaFile) map[string]bool {
-	runners := map[string]bool{}
+// wmaSeatRunners are this file's seat runners: a FuncDecl that launches a
+// seat and whose results end in a string, mapped to its result type names in
+// order. Two keys read this — wmaAccountLocals takes the LAST result and
+// wmaUnfoldedLocals takes the others — and it is one function because a
+// second spelling of "which function is a runner" is a second answer waiting
+// to disagree about which local is the account, which is the register arm 5
+// refuses one layer down.
+func wmaSeatRunners(f wmaFile) map[string][]string {
+	runners := map[string][]string{}
 	for _, fn := range wmaDecls(f.ast) {
 		if !wmaLaunchesSeat(fn) || fn.Type.Results == nil {
 			continue
@@ -739,12 +877,19 @@ func wmaAccountLocals(f wmaFile) map[string]bool {
 			}
 		}
 		if len(res) >= 2 && res[len(res)-1] == "string" {
-			runners[fn.Name.Name] = true
+			runners[fn.Name.Name] = res
 		}
 	}
-	locals := map[string]bool{}
+	return runners
+}
+
+// wmaRunnerBindings calls bind for every multi-assignment whose single
+// right-hand side calls one of runners, with that runner's result type names.
+// Both local keys walk the member file the same way, so they walk it in one
+// place.
+func wmaRunnerBindings(f wmaFile, runners map[string][]string, bind func(lhs []ast.Expr, res []string)) {
 	if len(runners) == 0 {
-		return locals
+		return
 	}
 	ast.Inspect(f.ast, func(n ast.Node) bool {
 		as, ok := n.(*ast.AssignStmt)
@@ -755,20 +900,25 @@ func wmaAccountLocals(f wmaFile) map[string]bool {
 		if !ok {
 			return true
 		}
-		callee := ""
-		switch fun := c.Fun.(type) {
-		case *ast.Ident:
-			callee = fun.Name
-		case *ast.SelectorExpr:
-			callee = fun.Sel.Name
-		}
-		if !runners[callee] {
+		res, is := runners[wmaCallee(c)]
+		if !is {
 			return true
 		}
-		if id, ok := as.Lhs[len(as.Lhs)-1].(*ast.Ident); ok && id.Name != "_" {
+		bind(as.Lhs, res)
+		return true
+	})
+}
+
+// wmaAccountLocals are the locals a call site binds to a seat runner's
+// account — the LAST string result of a function that launches a seat. One
+// hop, which is every spelling the member set uses and the same depth
+// treewidedoor_qa_test.go's parameter hop reads.
+func wmaAccountLocals(f wmaFile) map[string]bool {
+	locals := map[string]bool{}
+	wmaRunnerBindings(f, wmaSeatRunners(f), func(lhs []ast.Expr, _ []string) {
+		if id, ok := lhs[len(lhs)-1].(*ast.Ident); ok && id.Name != "_" {
 			locals[id.Name] = true
 		}
-		return true
 	})
 	return locals
 }
@@ -959,6 +1109,117 @@ func wmaAccountArg(x ast.Expr, runner, folded, param map[string]bool) (name, rou
 	return "", "", false
 }
 
+// wmaUnfoldedLocals are the seat's UNFOLDED words: the locals a member file
+// binds to a seat's own output with no fold on the way (ranger-base-thrn2).
+// That is the one value in this census's subject which carries newlines BY
+// CONSTRUCTION — a child's stdout and stderr, whatever it chose to say — and
+// an account is what the same seat's words look like after wwOneLine has
+// taken them.
+//
+// TWO ROUTES, and they are the two spellings the member set has for "keep the
+// raw output beside the account":
+//
+//	runner non-last  a seat runner's OTHER string results. bsLive.in returns
+//	                 `(bool, string, string)` and its own comment says why —
+//	                 "the raw output stays, because callers READ it — a sha, a
+//	                 digest line, bwrap's `busy`" — so the account is the last
+//	                 result and the unfolded words are the ones before it.
+//	waiter           a local bound from a Cmd waiter anywhere in the file
+//	                 (wmaWaiters), which is the same value one hop earlier,
+//	                 inside the launching code's own body. No member message
+//	                 renders one before an account today; it is in the key
+//	                 because that is ranger-base-axt1f's own site shape and
+//	                 arm 3 holds it over planted source, the way the
+//	                 unreadable-verb case is held with no member witness
+//	                 either.
+//
+// AND THE WAITER ROUTE IS NOT SCOPED TO A LAUNCHING FuncDecl, deliberately
+// and for ranger-base-momix's reason: the file where this class has been found
+// twice launches its seat from a CLOSURE, and wmaLaunchesSeat reads FuncDecls,
+// so a route that asked "is the enclosing declaration a seat runner" would
+// miss the one shape the census was last widened for. The cost is that a
+// FIXTURE child's output is read as unfolded too — and that is a red this
+// census is content to make: a `git status` dump rendered in front of an
+// account ends the line go test prints exactly as a seat's words do, and the
+// account is dropped either way. The report names the fold, which is the fix
+// in both cases.
+//
+// AND EVERY NAME THE ACCOUNT KEY HOLDS IS SUBTRACTED, which is the direction
+// every floor in this file points. The maps are file-wide — `out` is a waiter
+// local in six member files and the FOLDED ACCOUNT in bwrapgitrefslive_test.go
+// — and a folded value cannot carry a newline, so a name that is an account
+// anywhere in the file is not read as unfolded output anywhere in it. That
+// under-reads where one file spells both; it never grades a value the fold has
+// already been through.
+func wmaUnfoldedLocals(f wmaFile, runner, folded, param map[string]bool) map[string]bool {
+	locals := map[string]bool{}
+	wmaRunnerBindings(f, wmaSeatRunners(f), func(lhs []ast.Expr, res []string) {
+		for i := 0; i < len(lhs)-1 && i < len(res); i++ {
+			if res[i] != "string" {
+				continue
+			}
+			if id, ok := lhs[i].(*ast.Ident); ok && id.Name != "_" {
+				locals[id.Name] = true
+			}
+		}
+	})
+	ast.Inspect(f.ast, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok || len(as.Rhs) != 1 {
+			return true
+		}
+		c, ok := as.Rhs[0].(*ast.CallExpr)
+		if !ok || !wmaWaiters[wmaCallee(c)] {
+			return true
+		}
+		for _, l := range as.Lhs {
+			// The waiters answer `([]byte, error)` or `error`, and the error
+			// is not the seat's words — it is what bgSeatAccount folds INTO
+			// them. A name bound here and used as an error is harmless
+			// either way: arm 2 only ever asks about it when a format verb
+			// renders it before an account.
+			if id, ok := l.(*ast.Ident); ok && id.Name != "_" && id.Name != "err" {
+				locals[id.Name] = true
+			}
+		}
+		return true
+	})
+	for _, accounts := range []map[string]bool{runner, folded, param} {
+		for name := range accounts {
+			delete(locals, name)
+		}
+	}
+	return locals
+}
+
+// wmaUnfoldedArg reports whether one argument of a format call renders the
+// seat's unfolded words, naming how it is spelled. The two wrappers it reads
+// through are the two this tree spells them with, and NEITHER removes an
+// interior newline: `string(out)` is a conversion and `strings.TrimSpace`
+// trims the ends. A fold call is not matched at all, which is how
+// `wwOneLine(out)` stays out of this class without a case saying so.
+func wmaUnfoldedArg(x ast.Expr, unfolded map[string]bool) (name string, ok bool) {
+	switch e := x.(type) {
+	case *ast.Ident:
+		if unfolded[e.Name] {
+			return e.Name, true
+		}
+	case *ast.ParenExpr:
+		return wmaUnfoldedArg(e.X, unfolded)
+	case *ast.CallExpr:
+		// A conversion and a call are the same node, so the callee of
+		// `string(x)` is read the way every other callee in this file is.
+		callee := wmaCallee(e)
+		if len(e.Args) != 1 || (callee != "string" && callee != "TrimSpace") {
+			return "", false
+		}
+		if inner, is := wmaUnfoldedArg(e.Args[0], unfolded); is {
+			return callee + "(" + inner + ")", true
+		}
+	}
+	return "", false
+}
+
 // wmaFormat reconstructs a format string from a literal or a concatenation of
 // literals, so a format spelled across a `+` is read too.
 func wmaFormat(x ast.Expr) (string, bool) {
@@ -1004,6 +1265,36 @@ type wmaMsg struct {
 	ellipsis bool   // the call ends in a variadic spread
 	helper   bool   // rendered inside a t.Helper(), so go test prints the CALLER's file
 	helperIn string // the innermost function containing it, for the report
+	// unfolded are the OTHER arguments of this same call that render the
+	// seat's unfolded words (ranger-base-thrn2) — every position, not only
+	// the ones before the account, so arm 2 can floor the key's reach over
+	// a tree where every one of them is escaped, which is this tree.
+	unfolded []wmaUnfoldedAt
+}
+
+// wmaUnfoldedAt is one argument of a member message that renders the seat's
+// unfolded words: where it sits among the arguments, how it is spelled, and
+// the verb that renders it. `escapes` is that verb's answer, kept beside it
+// because the two halves of this reading red in different arms — the position
+// is arm 2's and the verb is arm 3's.
+type wmaUnfoldedAt struct {
+	argIdx  int
+	name    string
+	verb    string
+	escapes bool
+}
+
+// wmaUnfoldedBefore are the argument indices that put the seat's unfolded
+// words in front of the account UNESCAPED, which is what
+// wmaAccountBeforeNewline reads.
+func wmaUnfoldedBefore(m wmaMsg) []int {
+	var raw []int
+	for _, u := range m.unfolded {
+		if !u.escapes {
+			raw = append(raw, u.argIdx)
+		}
+	}
+	return raw
 }
 
 // wmaAccountMessages is THE KEY, in ONE place: every format call in one member
@@ -1030,6 +1321,7 @@ type wmaMsg struct {
 func wmaAccountMessages(f wmaFile) []wmaMsg {
 	runner, folded := wmaAccountLocals(f), wmaFoldLocals(f)
 	param := wmaParamAccounts(f, runner, folded)
+	unfolded := wmaUnfoldedLocals(f, runner, folded, param)
 	spans := wmaFuncSpans(f.ast)
 	var out []wmaMsg
 	ast.Inspect(f.ast, func(n ast.Node) bool {
@@ -1046,6 +1338,19 @@ func wmaAccountMessages(f wmaFile) []wmaMsg {
 			return true
 		}
 		helper, helperIn := wmaRenderedInHelper(spans, c.Pos())
+		// The unfolded words are read ONCE per call and carried on every
+		// message that call produces: whether a newline arrives before the
+		// account is a property of the call's other arguments, so a format
+		// that interpolates two accounts asks the same question twice.
+		var raw []wmaUnfoldedAt
+		for i, a := range c.Args[1:] {
+			name, ok := wmaUnfoldedArg(a, unfolded)
+			if !ok {
+				continue
+			}
+			verb, _ := wmaVerbAt(text, i)
+			raw = append(raw, wmaUnfoldedAt{argIdx: i, name: name, verb: verb, escapes: wmaVerbEscapes(verb)})
+		}
 		for i, a := range c.Args[1:] {
 			name, route, isAccount := wmaAccountArg(a, runner, folded, param)
 			if !isAccount {
@@ -1062,6 +1367,7 @@ func wmaAccountMessages(f wmaFile) []wmaMsg {
 				ellipsis: c.Ellipsis.IsValid(),
 				helper:   helper,
 				helperIn: helperIn,
+				unfolded: raw,
 			})
 		}
 		return true
@@ -1573,6 +1879,16 @@ func TestQAEveryWallMemberSeatLaunchRendersItsChildsError(t *testing.T) {
 // WHERE inside the first line the account lands is arm 6's, off this same key
 // (wmaAccountMessages) — this arm says the account is on the line evidence()
 // carries, and that one says the line's 300 characters reach it.
+//
+// AND THE NEWLINE NEED NOT BE IN THE TEXT (ranger-base-thrn2). The line go
+// test prints ends at the first newline of the RENDERED message, so an
+// argument that brings its own ends it just as a literal `\n` does — and the
+// seat's unfolded words are the one argument in this census's subject that
+// carry newlines by construction. This arm reads that class too
+// (wmaUnfoldedLocals) and holds such a message to the stricter rule unless
+// the verb escapes them. Any OTHER argument's newline is out of reach and
+// priced as a floor, which the head comment states and the doc comment on
+// wmaAccountBeforeNewline no longer claims otherwise.
 func TestQAEveryWallMemberMessageCarriesItsSeatAccountOnTheFirstLine(t *testing.T) {
 	t.Parallel()
 	files := wmaMemberFiles(t)
@@ -1583,6 +1899,12 @@ func TestQAEveryWallMemberMessageCarriesItsSeatAccountOnTheFirstLine(t *testing.
 	// goes stale at the next landing that moves a line, which is twice now.
 	// The Logf carries the live set so the reading is a `-v` run away.
 	var deferred []string
+	// AND THE UNFOLDED WORDS IN FRONT OF AN ACCOUNT, listed for the same
+	// reason (ranger-base-thrn2): the floor below is the only thing in this
+	// tree that witnesses the key reads them at all, and every one of them is
+	// GREEN today because of the verb that renders it. A count alone could
+	// not be checked against the set.
+	var unfolded []string
 	routes := map[string]int{}
 	for _, f := range files {
 		msgs := wmaAccountMessages(f)
@@ -1595,21 +1917,41 @@ func TestQAEveryWallMemberMessageCarriesItsSeatAccountOnTheFirstLine(t *testing.
 			// A variadic spread reorders nothing but hides how many
 			// arguments the verbs before the newline consumed, so it is
 			// the same unreadable case as an indexed verb.
-			before, readable, firstLine := wmaAccountBeforeNewline(m.text, m.argIdx)
+			raw := wmaUnfoldedBefore(m)
+			cause, firstLine := wmaAccountBeforeNewline(m.text, m.argIdx, raw)
 			if m.ellipsis {
-				readable = false
+				cause = wmaLineUnreadable
 			}
-			switch {
-			case !readable:
-				t.Errorf("%s:%d: this t.%s carries the seat's account %s in a format string that has a newline in it AND a verb whose argument positions cannot be read off the text (an indexed `%%[n]s`, a star width, or a variadic spread). `scripts/posse-wall-check` carries the FIRST `file.go:NN:` line and nothing after it (ADR 0097 D3), so whether the account survives depends on where it lands in %q — and this census will not guess. Spell the verbs in order, or fold the message onto one line.",
+			var rawNames, rawVerbs []string
+			for _, u := range m.unfolded {
+				if u.argIdx >= m.argIdx {
+					continue
+				}
+				unfolded = append(unfolded, fmt.Sprintf("%s:%d %s as %s (escapes=%v)", m.file, m.line, u.name, u.verb, u.escapes))
+				if !u.escapes {
+					rawNames = append(rawNames, u.name)
+					rawVerbs = append(rawVerbs, u.verb)
+				}
+			}
+			switch cause {
+			case wmaLineUnfolded:
+				// ranger-base-thrn2: the newline arrives inside a VALUE, so
+				// there is no newline in the text to point at and the
+				// report names the argument instead.
+				t.Errorf("%s:%d: this t.%s renders the seat's UNFOLDED words %s before its account %s, with a verb that does not escape them (%s). A seat says what it likes over as many lines as it likes — that is what %s exists to fold — so this message's first line ends wherever those words first break, and `scripts/posse-wall-check` carries that line and nothing after it (ADR 0097 D3). The account is then dropped in transit exactly as ranger-base-a688i's was, by a newline no reading of the format text can see. Fold those words (%s), quote them (`%%q`), or render them behind the account.",
+					m.file, m.line, m.verb, strings.Join(rawNames, ", "), m.name, strings.Join(rawVerbs, ", "), wmaFoldFunc, wmaFoldFunc)
+			case wmaLineUnreadable:
+				t.Errorf("%s:%d: this t.%s carries the seat's account %s in a format string that has a newline in it OR renders the seat's unfolded words before it, AND a verb whose argument positions cannot be read off the text (an indexed `%%[n]s`, a star width, or a variadic spread). `scripts/posse-wall-check` carries the FIRST `file.go:NN:` line and nothing after it (ADR 0097 D3), so whether the account survives depends on where it lands in %q — and this census will not guess. Spell the verbs in order, or fold the message onto one line.",
 					m.file, m.line, m.verb, m.name, firstLine)
-			case !before:
+			case wmaLineBehind:
 				t.Errorf("%s:%d: this t.%s renders the seat's account %s AFTER the first newline of its format string. `scripts/posse-wall-check` reports a failed member by its FIRST `file.go:NN:` line and nothing after it (ADR 0097 D3), and the launcher puts that one line on a P1 bead — so this message reaches the bead as %q and the account really is dropped in transit. That is ranger-base-a688i exactly: a symptom, a colon and nothing. Move the account in front of the newline; the prose behind it costs nothing.",
 					m.file, m.line, m.verb, m.name, firstLine)
-			case strings.ContainsAny(m.text, "\n\r"):
-				// The shape the rule before this one refused, and the
-				// reason the floor below exists.
-				deferred = append(deferred, fmt.Sprintf("%s:%d", m.file, m.line))
+			case wmaLineOK:
+				if strings.ContainsAny(m.text, "\n\r") {
+					// The shape the rule before this one refused, and the
+					// reason the floor below exists.
+					deferred = append(deferred, fmt.Sprintf("%s:%d", m.file, m.line))
+				}
 			}
 		}
 	}
@@ -1644,11 +1986,23 @@ func TestQAEveryWallMemberMessageCarriesItsSeatAccountOnTheFirstLine(t *testing.
 	// re-tightening would be green here and would red four messages whose
 	// shape ADR 0097 D3 prescribes — which is the state ranger-base-momix
 	// found and the reason that re-tightening is easy to type.
+	// AND THE WITNESS FOR THE OTHER HALF OF THE RULE (ranger-base-thrn2). The
+	// rule reads a newline that arrives inside an ARGUMENT as well as one
+	// written in the format, and the only thing in this tree that says the
+	// key can see the seat's unfolded words at all is a message that renders
+	// them in front of its account. There is one, and it is GREEN because of
+	// the verb it uses — which is the whole reading: the discriminator is
+	// `%q` against `%s`, and a key that stopped recognising
+	// bsLive.in's raw result would leave this arm green over a message one
+	// character of prose away from dropping its account.
+	if len(unfolded) == 0 {
+		t.Errorf("this arm read %d message(s) rendering the seat's unfolded words in front of an account, want at least 1 (1 on 2026-11-23: internal/posse/bwrapseatstorelive_test.go:506, bsLive.in's raw `out` under a `%%q` — the one row in the member set that renders unfolded words before its account, and escaped is why it passes). That is what witnesses this arm reading a newline that arrives inside an argument rather than in the format text; with none of them in the tree, nothing here says wmaUnfoldedLocals reaches the member set and arm 3's planted rows are the whole of it.", len(unfolded))
+	}
 	if len(deferred) == 0 {
 		t.Errorf("this arm read %d account message(s) that defer their prose to a second line, want at least 1 (6 at 814776ed on 2026-11-22: wallclaudeprojects_qa_test.go:445, wallclaudeprojectsattack_qa_test.go:386 and :403, and wallunixlive_test.go:237, :526 and :1130 — four of them ranger-base-momix's reading at e5221de6, the other two ranger-base-72z36's, and the line numbers are this tip's and not a promise about yours: the Logf below lists whatever the tree holds now). Those are what distinguish this arm's rule from `no newline at all`; with none of them in the tree, nothing here witnesses that the rule is positional and arm 3's planted rows are the whole of it.", len(deferred))
 	}
-	t.Logf("%d member file(s), %d of them carrying a seat account, %d account message(s) read (%d by a runner local, %d by a folded local, %d by an inline fold, %d by a parameter), %d of which defer prose to a second line with the account in front of it: %v",
-		len(files), withAccounts, read, routes["runner local"], routes["folded local"], routes["inline fold"], routes["parameter"], len(deferred), deferred)
+	t.Logf("%d member file(s), %d of them carrying a seat account, %d account message(s) read (%d by a runner local, %d by a folded local, %d by an inline fold, %d by a parameter), %d of which defer prose to a second line with the account in front of it: %v; %d render the seat's unfolded words in front of the account: %v",
+		len(files), withAccounts, read, routes["runner local"], routes["folded local"], routes["inline fold"], routes["parameter"], len(deferred), deferred, len(unfolded), unfolded)
 }
 
 // ARM 3 — THE RULES SAY NO. Both rules driven over planted source, each with
@@ -2011,27 +2365,225 @@ func TestX(t *testing.T) { outer(t, bgSeatAccount(err, out)) }`, []string{"acct"
 	// that matters most is the third: an account in FRONT of a newline is
 	// accepted, which is the shape ADR 0097 D3 prescribes and the shape the
 	// rule that stood here before refused.
+	//
+	// AND THE RAW ROWS ARE ranger-base-thrn2's: a newline that arrives inside
+	// an ARGUMENT rendered before the account ends the line as a literal one
+	// does, and the rule reads that for the one class of argument this census
+	// keys — the seat's unfolded words. `raw` is their argument indices, and
+	// the rows below are the whole of that reading over the text: in front of
+	// the account it is unreadable, behind it costs nothing, and an empty
+	// `raw` leaves every row above unchanged, which is why they still say
+	// what ranger-base-momix measured.
+	// AND THE CAUSE IS THE ROW, not a pair of booleans: arm 2 reports a
+	// different thing for each one, so the cause is what that arm branches on
+	// and what these rows pin.
 	for _, c := range []struct {
-		name, text       string
-		argIdx           int
-		before, readable bool
-		firstLine        string
+		name, text string
+		argIdx     int
+		raw        []int
+		cause      wmaLineCause
+		firstLine  string
 	}{
-		{"one line, one verb", "the seat refused: %s", 0, true, true, "the seat refused: %s"},
-		{"ranger-base-a688i's own shape, the account after the newline", "the seat ended before it ran (exit 1):\n%s", 0, false, true, "the seat ended before it ran (exit 1):"},
-		{"the account in front, the prose behind", "it said %s\ncwd %s — D3 assumes an unwritable transcript dir is survivable", 0, true, true, "it said %s"},
-		{"the second argument is behind the newline", "it said %s\ncwd %s", 1, false, true, "it said %s"},
-		{"a literal percent consumes no argument", "the wall took 100%% of it:\n%s", 0, false, true, "the wall took 100%% of it:"},
-		{"a carriage return is a newline too", "the seat refused:\r%s", 0, false, true, "the seat refused:"},
-		{"an indexed verb cannot be read positionally", "it said %[1]s\ncwd %[2]s", 0, false, false, "it said %[1]s"},
-		{"a star width cannot be read positionally", "it said %*s\ncwd %s", 1, false, false, "it said %*s"},
-		{"an unreadable verb in a ONE-LINE message is no finding", "it said %[1]s and %[1]s again", 0, true, true, "it said %[1]s and %[1]s again"},
+		{"one line, one verb", "the seat refused: %s", 0, nil, wmaLineOK, "the seat refused: %s"},
+		{"ranger-base-a688i's own shape, the account after the newline", "the seat ended before it ran (exit 1):\n%s", 0, nil, wmaLineBehind, "the seat ended before it ran (exit 1):"},
+		{"the account in front, the prose behind", "it said %s\ncwd %s — D3 assumes an unwritable transcript dir is survivable", 0, nil, wmaLineOK, "it said %s"},
+		{"the second argument is behind the newline", "it said %s\ncwd %s", 1, nil, wmaLineBehind, "it said %s"},
+		{"a literal percent consumes no argument", "the wall took 100%% of it:\n%s", 0, nil, wmaLineBehind, "the wall took 100%% of it:"},
+		{"a carriage return is a newline too", "the seat refused:\r%s", 0, nil, wmaLineBehind, "the seat refused:"},
+		{"an indexed verb cannot be read positionally", "it said %[1]s\ncwd %[2]s", 0, nil, wmaLineUnreadable, "it said %[1]s"},
+		{"a star width cannot be read positionally", "it said %*s\ncwd %s", 1, nil, wmaLineUnreadable, "it said %*s"},
+		{"an unreadable verb in a ONE-LINE message is no finding", "it said %[1]s and %[1]s again", 0, nil, wmaLineOK, "it said %[1]s and %[1]s again"},
+		// ranger-base-thrn2's rows. The first is the finding itself: a format
+		// with no newline of its own, which this rule used to pass unread.
+		{"unfolded words in front of the account end the line nobody can see", "the seat said %s; seat: %s", 1, []int{0}, wmaLineUnfolded, "the seat said %s; seat: %s"},
+		{"the same message with the newline in the text instead", "the seat said %s\nseat: %s", 1, nil, wmaLineBehind, "the seat said %s"},
+		{"unfolded words BEHIND the account cost it nothing", "seat: %s; it said %s", 0, []int{1}, wmaLineOK, "seat: %s; it said %s"},
+		{"unfolded words at the account's own position are the account", "seat: %s", 0, []int{0}, wmaLineOK, "seat: %s"},
+		{"an indexed verb with unfolded words is unreadable in a one-line message too", "the seat said %[1]s; seat: %[2]s", 1, []int{0}, wmaLineUnreadable, "the seat said %[1]s; seat: %[2]s"},
+		{"the literal fold is reported FIRST, because it is the specific one", "ended:\n%s said %s", 1, []int{0}, wmaLineBehind, "ended:"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			before, readable, firstLine := wmaAccountBeforeNewline(c.text, c.argIdx)
-			if before != c.before || readable != c.readable || firstLine != c.firstLine {
-				t.Errorf("wmaAccountBeforeNewline(%q, %d) = %v,%v,%q want %v,%v,%q — arm 2's line rule no longer reads what this file says it reads",
-					c.text, c.argIdx, before, readable, firstLine, c.before, c.readable, c.firstLine)
+			cause, firstLine := wmaAccountBeforeNewline(c.text, c.argIdx, c.raw)
+			if cause != c.cause || firstLine != c.firstLine {
+				t.Errorf("wmaAccountBeforeNewline(%q, %d, %v) = %q,%q want %q,%q — arm 2's line rule no longer reads what this file says it reads",
+					c.text, c.argIdx, c.raw, cause, firstLine, c.cause, c.firstLine)
+			}
+		})
+	}
+
+	// THE VERB READER AND THE ESCAPING SET (ranger-base-thrn2), which is the
+	// discriminator the whole widening turns on: the one member message that
+	// renders unfolded words in front of its account is green because it
+	// quotes them, so a reader that called `%s` escaping would pass that
+	// message and everything it stands for.
+	for _, c := range []struct {
+		name, text string
+		argIdx     int
+		verb       string
+		ok         bool
+		escapes    bool
+	}{
+		{"the first verb", "it said %s at %q", 0, "%s", true, false},
+		{"the second verb", "it said %s at %q", 1, "%q", true, true},
+		{"a literal percent is no verb", "100%% done %s", 0, "%s", true, false},
+		{"past the last verb", "it said %s", 1, "", false, false},
+		{"a width and a precision are flags on one verb", "it said %-20.5q", 0, "%-20.5q", true, true},
+		{"hex encodes a newline away", "it said %x", 0, "%x", true, true},
+		{"and so does the upper-case half", "it said %X", 0, "%X", true, true},
+		{"a bare value verb does not", "it said %v", 0, "%v", true, false},
+		{"and neither does the plussed one", "it said %+v", 0, "%+v", true, false},
+		// %d over a []byte is newline-free and this set says it is not:
+		// the over-read is deliberate (see wmaVerbEscapes).
+		{"a decimal is NOT in the escaping set", "it said %d", 0, "%d", true, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			verb, ok := wmaVerbAt(c.text, c.argIdx)
+			if verb != c.verb || ok != c.ok {
+				t.Errorf("wmaVerbAt(%q, %d) = %q,%v want %q,%v", c.text, c.argIdx, verb, ok, c.verb, c.ok)
+			}
+			if got := wmaVerbEscapes(verb); got != c.escapes {
+				t.Errorf("wmaVerbEscapes(%q) = %v want %v — the `%%q`-against-`%%s` reading is the whole of ranger-base-thrn2's widening", verb, got, c.escapes)
+			}
+		})
+	}
+
+	// AND THE KEY FOR THE SEAT'S UNFOLDED WORDS (ranger-base-thrn2), over
+	// planted source, with the negatives that keep it off everything a fold
+	// has been through. The first row is the member site the route exists for
+	// — bsLive.in's `(bool, string, string)`, whose middle result is the raw
+	// output callers READ and whose last is the account — and the second is
+	// that same site's own reason for passing: the raw result quoted.
+	for _, c := range []struct {
+		name     string
+		src      string
+		unfolded []string
+		// the per-argument reading of the ONE format call in the fixture,
+		// as `name|escapes` for an unfolded argument and "" for the rest
+		arg []string
+	}{
+		{"a seat runner's non-last string result is the unfolded output", `func run(t *testing.T) (bool, string, string) {
+	cmd := exec.Command("bwrap", "x")
+	out, err := cmd.CombinedOutput()
+	return err == nil, strings.TrimSpace(string(out)), bgSeatAccount(err, string(out))
+}
+func TestX(t *testing.T) {
+	ok, served, acct := run(t)
+	if !ok {
+		t.Errorf("the seat served %s, seat: %s", served, acct)
+	}
+}`, []string{"served", "out"}, []string{"served|false", ""}},
+		{"the same site with the raw result quoted, which is why the member set is green", `func run(t *testing.T) (bool, string, string) {
+	cmd := exec.Command("bwrap", "x")
+	out, err := cmd.CombinedOutput()
+	return err == nil, strings.TrimSpace(string(out)), bgSeatAccount(err, string(out))
+}
+func TestX(t *testing.T) {
+	ok, served, acct := run(t)
+	if !ok {
+		t.Errorf("the seat served %q, seat: %s", served, acct)
+	}
+}`, []string{"served", "out"}, []string{"served|true", ""}},
+		{"the LAST string result is the account and not the unfolded output", `func run(t *testing.T) (bool, string) {
+	cmd := exec.Command("bwrap", "x")
+	out, err := cmd.CombinedOutput()
+	return err == nil, bgSeatAccount(err, string(out))
+}
+func TestX(t *testing.T) {
+	ok, acct := run(t)
+	if !ok {
+		t.Errorf("the seat refused: %s", acct)
+	}
+}`, []string{"out"}, []string{""}},
+		{"a non-string result is no one's words", `func run(t *testing.T) (int, string) {
+	cmd := exec.Command("bwrap", "x")
+	err := cmd.Run()
+	return cmd.ProcessState.ExitCode(), bgSeatAccount(err, "")
+}
+func TestX(t *testing.T) {
+	code, acct := run(t)
+	t.Errorf("exit %d, seat: %s", code, acct)
+}`, nil, []string{"", ""}},
+		{"a waiter's own local, which is ranger-base-axt1f's site shape", `func TestX(t *testing.T) {
+	cmd := exec.Command("bwrap", "x")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the seat said %s, seat: %s", out, bgSeatAccount(err, string(out)))
+	}
+}`, []string{"out"}, []string{"out|false", ""}},
+		{"and read through the two wrappers that do not remove a newline", `func TestX(t *testing.T) {
+	cmd := exec.Command("bwrap", "x")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the seat said %s, seat: %s", strings.TrimSpace(string(out)), bgSeatAccount(err, string(out)))
+	}
+}`, []string{"out"}, []string{"TrimSpace(string(out))|false", ""}},
+		{"a name the account key holds is subtracted, which is bwrapgitrefslive's `out`", `func TestX(t *testing.T) {
+	cmd := exec.Command("bwrap", "x")
+	raw, err := cmd.CombinedOutput()
+	out := bgSeatAccount(err, string(raw))
+	t.Errorf("the seat refused: %s", out)
+}`, []string{"raw"}, []string{""}},
+		{"a fold of the raw output is not the raw output", `func TestX(t *testing.T) {
+	cmd := exec.Command("bwrap", "x")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the seat said %s, seat: %s", wwOneLine(string(out)), bgSeatAccount(err, string(out)))
+	}
+}`, []string{"out"}, []string{"", ""}},
+		{"the waiter's error is not its words", `func TestX(t *testing.T) {
+	cmd := exec.Command("bwrap", "x")
+	err := cmd.Run()
+	t.Fatalf("the seat refused (%v), seat: %s", err, bgSeatAccount(err, ""))
+}`, nil, []string{"", ""}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, f := wmaFixture(t, c.src, "")
+			runner, folded := wmaAccountLocals(f), wmaFoldLocals(f)
+			param := wmaParamAccounts(f, runner, folded)
+			got := wmaUnfoldedLocals(f, runner, folded, param)
+			if len(got) != len(c.unfolded) {
+				t.Fatalf("wmaUnfoldedLocals found %v, want %v — arm 2's reading of the seat's unfolded words no longer binds what this file says it binds:\n%s", got, c.unfolded, c.src)
+			}
+			for _, w := range c.unfolded {
+				if !got[w] {
+					t.Errorf("wmaUnfoldedLocals found %v, want it to name %q:\n%s", got, w, c.src)
+				}
+			}
+			// And the per-argument reading with its verb, which is what arm 2
+			// keys on: the name alone decides nothing, because the member set
+			// passes on the verb.
+			var read []string
+			ast.Inspect(f.ast, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok || len(call.Args) < 2 {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || !wmaFormatVerbs[sel.Sel.Name] {
+					return true
+				}
+				text, ok := wmaFormat(call.Args[0])
+				if !ok {
+					return true
+				}
+				for i, a := range call.Args[1:] {
+					name, is := wmaUnfoldedArg(a, got)
+					if !is {
+						read = append(read, "")
+						continue
+					}
+					verb, _ := wmaVerbAt(text, i)
+					read = append(read, fmt.Sprintf("%s|%v", name, wmaVerbEscapes(verb)))
+				}
+				return true
+			})
+			if len(read) != len(c.arg) {
+				t.Fatalf("wmaUnfoldedArg read %d format argument(s), want %d:\n%s", len(read), len(c.arg), c.src)
+			}
+			for i := range c.arg {
+				if read[i] != c.arg[i] {
+					t.Errorf("argument %d reads as %q, want %q — arm 2's reading of a newline arriving inside an argument no longer means what this file says it means:\n%s", i, read[i], c.arg[i], c.src)
+				}
 			}
 		})
 	}
@@ -2232,10 +2784,11 @@ func TestQAEveryWallMemberAccountFitsInsideTheEvidenceBudget(t *testing.T) {
 	for _, f := range files {
 		for _, m := range wmaAccountMessages(f) {
 			// Arm 2's cases, and arm 2 reports them. A message whose account
-			// is behind the newline or whose positions cannot be read has no
+			// is behind the newline, whose positions cannot be read, or
+			// whose line ends inside an earlier argument's own words has no
 			// place on the first line for this arm to measure.
-			before, readable, firstLine := wmaAccountBeforeNewline(m.text, m.argIdx)
-			if m.ellipsis || !readable || !before {
+			cause, firstLine := wmaAccountBeforeNewline(m.text, m.argIdx, wmaUnfoldedBefore(m))
+			if m.ellipsis || cause != wmaLineOK {
 				continue
 			}
 			spent, ok := wmaSpentBefore(firstLine, m.argIdx)
