@@ -65,6 +65,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-3s2ig](ranger-base-3s2ig.md) — ranger-base-3s2ig — the landing chain asks about parks now, and what reading one costs — 2026-11-22
 - [ranger-base-3bhxb](ranger-base-3bhxb.md) — The park census has one base, and the carrier annotation is witnessed — 2026-11-22
 - [ranger-base-2unmh](ranger-base-2unmh.md) — Four closes verified, and four arms nothing witnessed (ranger-base-2unmh) — 2026-11-22
+- [ranger-base-2t8fd](ranger-base-2t8fd.md) — ranger-base-2t8fd — the merge-back whose conflict was the stale figure itself — 2026-11-22
 - [ranger-base-2q0uy](ranger-base-2q0uy.md) — The host staging-root write is the stand-down shape's, not a fixture's, and no fixture root closes it (ranger-base-2q0uy) — 2026-11-22
 - [ranger-base-25kki](ranger-base-25kki.md) — The landed check's parallel body and its made tail (ranger-base-25kki) — 2026-11-22
 - [ranger-base-1aayx](ranger-base-1aayx.md) — The fourteen macos arm-1 reds were twelve landings and one fixture root (ranger-base-1aayx) — 2026-11-22
