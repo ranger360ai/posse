@@ -974,8 +974,15 @@ func TestUpgradeRenderAskedReadsTheMarkAndNotTheExitCode(t *testing.T) {
 // because the census that requires every row to carry a class reads shipped
 // sources only (TestQAEveryStatusConditionCodeHasAnUpgradeClass), so naming
 // one in a test is not a claim that this package can print it.
+//
+// G99, and OFF THE REAL SEQUENCE ON PURPOSE (ranger-base-p51zu). It was G19,
+// the next unused number, and then G19 was built: every rule-5 arm went red
+// at once on a bead that had nothing to do with this file, because the row
+// whose premise is "this binary has no class for it" had acquired one. The
+// number has to be one the table will not reach, which is also why the
+// spot-check arm above already spelled it G99.
 func upgradeNewRow() GovCondition {
-	return GovCondition{ID: "G19", Class: GovLane, Key: "a-later-builds-row", Detail: "a condition this binary has no class for"}
+	return GovCondition{ID: "G99", Class: GovLane, Key: "a-later-builds-row", Detail: "a condition this binary has no class for"}
 }
 
 // Rule 5 whole, over the four readings it distinguishes. The pair is the
@@ -994,23 +1001,23 @@ func TestUpgradeClassesAnUnknownRowByTheTargetsOwnAnswer(t *testing.T) {
 		// The row ranger-base-i9fq8 measured, in the shape that defect had:
 		// the target knows it is the install's own footprint, and the judge
 		// has never heard of it.
-		{"the target classes it install", map[string]string{"G19": "install"}, false, true,
-			[]string{"gained 1 LANE G19 row(s)", "the target classes G19 install", "this binary had no class for it"}},
+		{"the target classes it install", map[string]string{"G99": "install"}, false, true,
+			[]string{"gained 1 LANE G99 row(s)", "the target classes G99 install", "this binary had no class for it"}},
 		// Same rule, the other excusing word: a shop-state row added in the
 		// range would otherwise roll back every upgrade from the day it
 		// first appears.
-		{"the target classes it shop", map[string]string{"G19": "shop"}, false, true,
-			[]string{"gained 1 LANE G19 row(s)", "the target classes G19 shop", "this binary had no class for it"}},
+		{"the target classes it shop", map[string]string{"G99": "shop"}, false, true,
+			[]string{"gained 1 LANE G99 row(s)", "the target classes G99 shop", "this binary had no class for it"}},
 		// The target says the row is its own rendering, which is the answer
 		// that trips — and the one answer a binary wanting to escape the row
 		// would never give.
-		{"the target classes it binary", map[string]string{"G19": "binary"}, false, false,
-			[]string{"no class for at all", "the target classes G19 binary itself"}},
+		{"the target classes it binary", map[string]string{"G99": "binary"}, false, false,
+			[]string{"no class for at all", "the target classes G99 binary itself"}},
 		// It answered, and its partition does not carry the row it just
 		// printed. Positive evidence only: an answer that names no class is
 		// not an answer that says `shop`.
 		{"the target answered and named no class for it", nil, false, false,
-			[]string{"no class for at all", "does not name exactly one class for G19"}},
+			[]string{"no class for at all", "does not name exactly one class for G99"}},
 		// And the silence. A binary with no `--classes` flag at all cannot
 		// describe anything, and rule 5 reads that as not asked — never off
 		// the exit code, which is the same 1 for a refused flag and for a
@@ -1050,8 +1057,8 @@ func TestUpgradeClassesAnUnknownRowByTheTargetsOwnAnswer(t *testing.T) {
 func TestUpgradeSaysNothingAboutTheTargetsClassesWithoutAnUnknownRow(t *testing.T) {
 	standing := upgradeNewRow()
 	f := newD4Fixture(t,
-		fakePosse{Stamp: "aaaaaaa", Conds: GovSet{standing}, Classes: map[string]string{"G19": "install"}},
-		fakePosse{Conds: GovSet{standing}, Classes: map[string]string{"G19": "install"}})
+		fakePosse{Stamp: "aaaaaaa", Conds: GovSet{standing}, Classes: map[string]string{"G99": "install"}},
+		fakePosse{Conds: GovSet{standing}, Classes: map[string]string{"G99": "install"}})
 	out, err := f.run(t)
 	if err != nil {
 		t.Fatalf("a row that was there before the swap rolled the install back: %v\n%s", err, out)
@@ -1261,24 +1268,24 @@ func TestUpgradeParseClassesReadsTheMarkedLinesAlone(t *testing.T) {
 		{"the verb's own answer", strings.Join(UpgradeClassLines(), "\n") + "\n", nil, true},
 		{"a binary without the flag", "posse: unknown flag: --classes — usage: posse upgrade [<sha>]\n", map[string]string{}, false},
 		{"silence", "", map[string]string{}, false},
-		{"one row", mark + "G19 install\n", map[string]string{"G19": "install"}, true},
+		{"one row", mark + "G99 install\n", map[string]string{"G99": "install"}, true},
 		// Asked is the MARK and not the map: a build that answered and
 		// named nothing this reader could use still answered, and a reader
 		// that said "not asked" there would report the wrong one of rule
 		// 5's four readings.
-		{"a marked line with no class", mark + "G19\n", map[string]string{}, true},
-		{"a marked line with a fourth field", mark + "G19 install (promoted)\n", map[string]string{}, true},
+		{"a marked line with no class", mark + "G99\n", map[string]string{}, true},
+		{"a marked line with a fourth field", mark + "G99 install (promoted)\n", map[string]string{}, true},
 		// A row answered twice is dropped rather than resolved by order:
 		// either order is right for one spelling and wrong for the other,
 		// and the direction that costs something is excusing a row on an
 		// answer that contradicts itself.
-		{"a row answered twice", mark + "G19 shop\n" + mark + "G19 binary\n", map[string]string{}, true},
-		{"a row answered twice, the other way", mark + "G19 binary\n" + mark + "G19 shop\n", map[string]string{}, true},
-		{"a row answered three times", mark + "G19 shop\n" + mark + "G19 shop\n" + mark + "G19 shop\n", map[string]string{}, true},
+		{"a row answered twice", mark + "G99 shop\n" + mark + "G99 binary\n", map[string]string{}, true},
+		{"a row answered twice, the other way", mark + "G99 binary\n" + mark + "G99 shop\n", map[string]string{}, true},
+		{"a row answered three times", mark + "G99 shop\n" + mark + "G99 shop\n" + mark + "G99 shop\n", map[string]string{}, true},
 		// The mark opens a LINE. A sentence that mentions it is prose from
 		// a build whose header this reader was never taught.
 		{"the mark inside a sentence", "nothing here opens with upgrade-class: at all\n", map[string]string{}, false},
-		{"a leading blank line and one row", "\n" + mark + "G19 shop\n", map[string]string{"G19": "shop"}, true},
+		{"a leading blank line and one row", "\n" + mark + "G99 shop\n", map[string]string{"G99": "shop"}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -1528,6 +1535,7 @@ var upgradeClassValuePin = []struct {
 	{"G16", upgradeShopState, ""},
 	{"G17", upgradeBinaryRendered, "a static map judged by this binary's own cage resolver: nothing but the swap can have changed the answer"},
 	{"G18", upgradeInstallSubject, "the rename CREATES this row by construction — rename(2) leaves the live dispatch loop on the old inode — so as binary-rendered it rolls back every good install on a box with a loop running (ranger-base-rrgnc, watchimage.go)"},
+	{"G19", upgradeShopState, "G15's store plus a clock: the same session metas read for a `prompted:` stamp, with a 15-minute grace between the launch and the row, so a seat launched 14 minutes before the suite starts reds inside it with no binary involved (unprompted.go)"},
 	{GovCondition{}.Row(), upgradeShopState, "the three pulse-era carry-overs: git, herdr and the clock, all three moving on their own"},
 }
 

@@ -162,6 +162,9 @@ const (
 //	G18  /proc + the watch pid       INSTALL  this verb's rename CREATES it:
 //	                                          the live loop stays on the old
 //	                                          inode (ranger-base-rrgnc)
+//	G19  the session meta + clock    shop     a seat is launched, prompted,
+//	                                          reaped — or crosses the grace
+//	                                          inside the window
 //	—    unpushed / no-live / backup shop     git, herdr and the clock
 //
 // G7 IS THE ONE THE ADR DID NOT NAME, and it is the reason this bead was
@@ -253,6 +256,14 @@ var upgradeConditionSource = map[string]upgradeCondClass{
 	// binary-rendered it would roll back every good install; it is the
 	// install's follow-through, which the report names (upgradeWatchLine).
 	"G18": upgradeInstallSubject,
+	// G19 is G15's store plus a clock (unprompted.go): the same session
+	// metas, read for a `prompted:` stamp instead of a `degraded:` list,
+	// with a 15-minute grace between the launch and the row. Both halves
+	// move on their own and the second one moves on nothing else — a seat
+	// launched 14 minutes before a twelve-minute suite starts reds inside
+	// it with no binary involved, which is the clearest shop-state shape in
+	// this table.
+	"G19": upgradeShopState,
 	// The three pulse-era carry-overs, which GovReport prints as one row
 	// name because none of them has a G-number: unpushed commits on a beads
 	// repo, no live session for the pulse persona, and a stale or absent

@@ -2331,3 +2331,99 @@ func TestGovNoAllClearOverADegradedWall(t *testing.T) {
 		t.Error("GovSummary says clear over a foreign hook wall")
 	}
 }
+
+// ─── G19 · a dispatched seat that never got its work prompt ──────────────────
+//
+// unprompted.go carries the incident (ranger-base-p51zu) and the predicate.
+// These four pins are its exclusions and its one positive case, and the
+// positive case is written against the record pair the live seats actually
+// showed: `bead:` set, `prompted:` absent, `launched:` old.
+
+// govLaunchStamps puts the two clocks G19 reads on a session's record. It
+// writes them straight onto the meta rather than driving a launch, because
+// the row's whole subject is a record in a state no launch leaves behind on
+// purpose — a `bead:` pointer with no prompt stamp under it.
+func govLaunchStamps(t *testing.T, b *HerdrBackend, name string, launched, prompted time.Time) {
+	t.Helper()
+	m, ok := b.readMeta(name)
+	if !ok {
+		t.Fatalf("no meta for %s", name)
+	}
+	m.Launched, m.Prompted = launched, prompted
+	if err := b.writeMeta(m); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGovG19SeatThatNeverGotItsWorkPrompt(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writePersona(t, b.App, "developer", "code")
+	mustCreate(t, b, NewSessionOpts{Name: "developer-x", Agent: "developer", Dir: dir, Bead: "bd-1"})
+	govLaunchStamps(t, b, "developer-x", govNow.Add(-20*time.Minute), time.Time{})
+
+	set := shopSet(t, govIn(t, b))
+	g := find(set, "G19")
+	if g == nil {
+		t.Fatalf("no G19 for a bead-carrying seat with no prompted: stamp: %v", set.Keys())
+	}
+	if g.Key != "unprompted:developer-x" || g.Class != GovLane {
+		t.Errorf("G19 = %+v, want key unprompted:developer-x class LANE", *g)
+	}
+	// The bead, because the remedy is to get THAT work to THAT seat and a
+	// row naming only the session leaves the operator to join it by hand.
+	if !strings.Contains(g.Detail, "bd-1") {
+		t.Errorf("Detail does not name the bead: %q", g.Detail)
+	}
+}
+
+// The stamp is the whole of the predicate's other half, and any launcher's
+// prompt counts — including the hand `posse prompt` that is the measured
+// recovery for this row (ADR 0011 §3, cmd/posse `case "prompt"`).
+func TestGovG19PromptedSeatIsNotACondition(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writePersona(t, b.App, "developer", "code")
+	mustCreate(t, b, NewSessionOpts{Name: "developer-x", Agent: "developer", Dir: dir, Bead: "bd-1"})
+	govLaunchStamps(t, b, "developer-x", govNow.Add(-20*time.Minute), govNow.Add(-19*time.Minute))
+
+	if g := find(shopSet(t, govIn(t, b)), "G19"); g != nil {
+		t.Errorf("a seat whose record says it was prompted must raise nothing: %+v", *g)
+	}
+}
+
+// A launch IN PROGRESS is the one false positive worth paying a grace for:
+// a typed launch spends the runtime's patience up to three times before the
+// keystroke, so a seat seconds old has not missed anything yet.
+func TestGovG19SeatInsideTheGraceIsNotACondition(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writePersona(t, b.App, "developer", "code")
+	mustCreate(t, b, NewSessionOpts{Name: "developer-x", Agent: "developer", Dir: dir, Bead: "bd-1"})
+	govLaunchStamps(t, b, "developer-x", govNow.Add(-30*time.Second), time.Time{})
+
+	if g := find(shopSet(t, govIn(t, b)), "G19"); g != nil {
+		t.Errorf("a launch still inside its own patience must raise nothing: %+v", *g)
+	}
+}
+
+// The two populations that are somebody else's: the operator's own session
+// (ADR 0008 — an unprompted crew session is a conversation waiting for them
+// to type), and a session nobody ever aimed at a bead, which is the
+// reaper's to judge on its own evidence (autoreap.go's widened arm).
+func TestGovG19CrewAndBeadlessSeatsRaiseNothing(t *testing.T) {
+	b, _ := newTestBackend(t)
+	dir := govRepo(t, b)
+	writePersona(t, b.App, "developer", "code")
+
+	mustCreate(t, b, NewSessionOpts{Name: "developer-crew", Agent: "developer", Dir: dir, Bead: "bd-1", Crew: true})
+	govLaunchStamps(t, b, "developer-crew", govNow.Add(-20*time.Minute), time.Time{})
+	mustCreate(t, b, NewSessionOpts{Name: "developer-slot", Agent: "developer", Dir: dir})
+	govLaunchStamps(t, b, "developer-slot", govNow.Add(-20*time.Minute), time.Time{})
+
+	for _, c := range shopSet(t, govIn(t, b)) {
+		if c.ID == "G19" {
+			t.Errorf("neither a crew seat nor a beadless one is this population: %+v", c)
+		}
+	}
+}

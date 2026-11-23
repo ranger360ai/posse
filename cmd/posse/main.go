@@ -644,6 +644,32 @@ func main() {
 		// unless this stamps it — autoReapPass skips s.Bead=="" forever
 		// (ranger-base-v674). Only a work-prompt-shaped text matches.
 		hb.NoteBeadFromPrompt(name, text)
+		// …and the OTHER stamp the same record carries, which this path has
+		// never written (ranger-base-p51zu). `prompted:` is the persisted
+		// half of PromptGrace (ADR 0011 §3) and the launcher writes it at
+		// every dispatch; a hand prompt wrote the bead pointer above and
+		// left the stamp absent, so two readers were wrong about this
+		// session afterwards:
+		//
+		//   - promptedRecently, which is what stops a running pass from
+		//     typing a second instruction into a seat mid-turn. The whole
+		//     reason the stamp was persisted at all is that a prompt one
+		//     process sent must be legible to another (rangerhq-tzdf's
+		//     remaining half) — and the operator's own prompt was the one
+		//     prompt it could not see.
+		//   - G19, which reads a bead-carrying seat with no stamp as a seat
+		//     that never got its work (unprompted.go). A hand `posse prompt`
+		//     IS the measured recovery for that row, so without this the
+		//     remedy could not clear the condition.
+		//
+		// After the prompt took, like the crew mark above and for the same
+		// reason: a failed prompt is not a prompt. Best-effort inside
+		// MarkPrompted — a prompt that landed is never reported as a failure
+		// because its record could not be written — and it is the same
+		// read-modify-write on the same file NoteBeadFromPrompt just did,
+		// without the launcher lock that dispatch holds, which is the risk
+		// class this call site already carries rather than a new one.
+		hb.MarkPrompted(name, time.Now())
 		// The occupant's evidence verbatim — on herdr the API envelope,
 		// which is what this printed before the slot was extracted.
 		fmt.Fprintf(out, "%s\n", res.Evidence)

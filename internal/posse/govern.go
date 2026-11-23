@@ -903,6 +903,30 @@ func ShopCheck(in GovInputs) (GovSet, []error) {
 			s.Name, s.Agent, s.Runtime, s.Cage, s.Degraded))
 	}
 
+	// ── G19 · a dispatched seat that never got its work prompt ───────────
+	//
+	// unprompted.go carries the incident, the predicate's four exclusions
+	// and why the grace is a measured bound rather than a config key. The
+	// walk is here, beside G15's, because both rows are readings of a live
+	// session's own run record and the listing is already in hand.
+	//
+	// ONE FILE READ PER CANDIDATE, and only for a session that passes the
+	// free clauses first: the listing already carries `Bead`, `Crew` and
+	// `Foreign`, so a record is opened only for a seat that is a dispatched
+	// per-bead session — eight of them on a full box, at pass cadence.
+	for _, s := range sessions {
+		if s.Foreign || s.Crew || s.Bead == "" {
+			continue
+		}
+		m, ok := in.HB.readMeta(s.Name)
+		if !ok {
+			continue
+		}
+		if c, yes := unpromptedSeat(s, m, now); yes {
+			add(c.ID, c.Class, c.Key, c.Detail)
+		}
+	}
+
 	// ── G16 · a census line is near, or past, bd's 64 KB scanner limit ──
 	//
 	// ADR 0072 D5. The write-time judge (ProjectBdWrite, B1) and the
