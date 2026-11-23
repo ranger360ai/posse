@@ -914,6 +914,26 @@ type AgentDetection struct {
 	// reading: herdr drops a detected label when argv0 leaves the pane, so
 	// that route has this guard already (ADR 0061 Claims facts 1 and 3).
 	ShellForeground bool `json:"-"`
+	// MuxSeen is posse's own field too, and it is the OCCUPANT's answer to
+	// the question the two fields above answer for herdr's reported route:
+	// the multiplexer reported a state and said it has positive evidence
+	// that the runtime holds this seat's keyboard (`MuxReading.Seen`, ADR
+	// 0076 §3 — "the Rex form of herdr's Seen()": a program_status record
+	// whose owner is not the block's own shell and is still a live process
+	// in it).
+	//
+	// IT IS NOT A THIRD KIND OF READING. It is the same fact Rule and
+	// Reported carry, from the one source that can answer it where there is
+	// neither a screen posse may read nor an `agent explain` to ask (ADR
+	// 0076 §4) — which is why spending it at all needed a ruling of its own
+	// (Amendment 12, ranger-base-25otk) and why it is set in exactly one
+	// place: muxSettledGate, pinned mechanically in muxsettle_qa_test.go.
+	//
+	// Never set on a herdr reading, and nothing has to remember that:
+	// herdr's wait envelope reports a state and never what recognized it,
+	// so `waitReading` leaves `MuxReading.Seen` false by design and this
+	// field has nothing to copy.
+	MuxSeen bool `json:"-"`
 }
 
 // EvaluatedRule is one line of herdr's working: a manifest rule, whether it
@@ -954,11 +974,26 @@ type EvaluatedRule struct {
 //     is a work prompt typed into a shell that runs every line of it
 //     (D3.2 — ranger-base-3p0's failure with the cause one layer over).
 //
-// The two routes do not compose — a reading either came from a screen or from
-// a report — and the rule arm is first so a detected pane pays nothing for
-// this arm existing.
+// The routes do not compose — a reading came from a screen, from a report, or
+// from the occupant itself — and the rule arm is first so a detected pane pays
+// nothing for the others existing.
+//
+// THE THIRD IS THE OCCUPANT'S OWN (MuxSeen, ADR 0076 Amendment 12,
+// ranger-base-25otk): where there is neither a screen posse may read nor an
+// `agent explain` to ask, the multiplexer answers this question itself and §3
+// declares its answer the Rex form of this method. It is spent at one gate and
+// set in one place; the field's own doc says why that matters.
 func (d AgentDetection) Seen() bool {
 	if d.Rule.ID != "" || d.VisibleIdle {
+		return true
+	}
+	if d.MuxSeen {
+		// The OCCUPANT's own answer (ADR 0076 Amendment 12,
+		// ranger-base-25otk). A third arm rather than a clause on the one
+		// below, because the two conditions that arm applies are herdr's
+		// process read and are already spent inside this field: the
+		// occupant would not have set it for a record whose owner is the
+		// seat's own shell or is no longer live there (ADR 0076 §3).
 		return true
 	}
 	return d.Reported != "" && reportedStateIsWatched(d.State) && !d.ShellForeground

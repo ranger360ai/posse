@@ -6623,6 +6623,14 @@ func (d *Dispatcher) awaitAgent(id, persona, session, runtime string, wait time.
 // live test, for one — can say what the gate actually opened on rather than
 // re-reading the pane a moment later and asking a different question.
 //
+// WHEN THE OCCUPANT ALREADY ANSWERED IT. A `Wait` reading that is settled
+// and carries `Seen` is this gate's own standard met by the verb that was
+// asked, so it returns on the first poll and takes no `explain` at all
+// (muxSettledGate, ADR 0076 Amendment 12). That arm is the whole of what a
+// §4-missing instance's ladder has to go on — the confirmation below can
+// never arrive there — and it fires on no herdr reading, because a herdr
+// wait envelope reports a state and never what recognized it.
+//
 // THE WINDOW HAS TWO EXITS AND THEY SAY THE SAME SENTENCE. The deadline check
 // at the foot of this loop is one; the other is the occupant's own `Wait`
 // refusing, which happens at the same instant because `ms` below is sized
@@ -6678,6 +6686,26 @@ func (d *Dispatcher) awaitSettled(id, session string, target Seat, until []strin
 			// caller writes; it re-takes no decision, and blockedsettle.go
 			// has both arguments (ranger-base-x2grk).
 			return status, d.blockerEvidence(target, status), nil
+		}
+		if det, ok := muxSettledGate(res); ok {
+			// THE OCCUPANT WAS HANDED THE QUESTION AND ANSWERED IT (ADR 0076
+			// Amendment 12, ranger-base-25otk). A settled state the occupant
+			// says it has positive evidence for IS this gate's standard — ADR
+			// 0013 §1's settle row reads `idle`/`done` *Seen()*, and §3
+			// declares `MuxReading.Seen` the Rex form of that same `Seen()`.
+			// So the explain below is a CONFIRMATION of a fact herdr's wait
+			// envelope cannot carry, not a second condition the grid asks
+			// for, and a reading that already carries it needs no second
+			// instant.
+			//
+			// Nothing moves on herdr: `waitReading` leaves Seen false by
+			// design, so every herdr launch takes the ladder below exactly as
+			// it did. What it ends is the 45s this gate spent per launch on a
+			// §4-missing instance before conceding on whichever reading was
+			// LAST — 857 launches of 857, and five abandoned outright, two of
+			// them promptable for most of the window they were abandoned in
+			// (muxsettle.go has the census and the risk argument).
+			return det.State, det, nil
 		}
 		// `agent wait` and `agent explain` read the same detection at two
 		// different instants, and the second one wins: it is the fresher

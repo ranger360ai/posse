@@ -32,6 +32,12 @@ package posse
 //     against a real non-herdr occupant rather than through the renderer —
 //     a pin that called explainDegrade directly would prove nothing about
 //     who reaches it.
+//     SINCE ADR 0076 AMENDMENT 12 (ranger-base-25otk) one of the three
+//     cannot be: the settle ladder now ACCEPTS a settled reading the
+//     occupant has evidence for, and Rex answers no other kind, so arm 4b
+//     reaches this renderer through an occupant that answers §2's verb with
+//     a state and nothing else — the shape herdr's own envelope has and the
+//     interface permits. Arm 4a is the accept, against the real occupant.
 //  4. THE DEGRADE DID NOT MOVE. ADR 0076 §4's reading is "not available" and
 //     never a "no", so each arm below asserts the concession still happens:
 //     the gather goes on, the prompt goes out, the gate stands down. That is
@@ -222,11 +228,25 @@ func TestQAThePromptGateStandsDownNamingTheRuleAndNotHerdr(t *testing.T) {
 	}
 }
 
-// Arm 4 — the settle ladder (dispatch.go's awaitSettled). `agent wait`'s
-// occupant answered idle; the explain that would have confirmed it is a verb
-// this multiplexer does not have, so the ladder prompts on the state it has
-// and names the rule it is standing on.
-func TestQATheSettleLadderConcedesNamingTheRuleAndNotHerdr(t *testing.T) {
+// Arm 4 — the settle ladder (dispatch.go's awaitSettled), in the two halves
+// ADR 0076 Amendment 12 split it into (ranger-base-25otk).
+//
+// IT USED TO BE ONE ARM AND IT COULD NOT STAY ONE. This arm asserted that a
+// real Rex occupant answering `idle` drove the ladder into the §4 concession
+// — which it did, for the whole window, on every launch. Amendment 12 made
+// that reading an ACCEPT: Rex's `Wait` only ever answers a settled state it
+// has positive evidence for (`rexReading` maps a state in its `Seen` branch
+// and nowhere else), so the production occupant can no longer produce the
+// shape the degrade needs, and a fixture that claimed it does would be
+// pinning a path the box does not have.
+//
+// So 4a asserts the ACCEPT against the real occupant — the degrade is not
+// reached, and the ladder opens on the occupant's own evidence — and 4b keeps
+// ranger-base-l32dl's own property, that this SITE still reaches the one
+// renderer, against an occupant that can still get there: one that answers
+// §2's verb with a state and no evidence, which the interface permits and
+// which herdr's own envelope is ("Seen is never derived from State").
+func TestQATheSettleLadderOpensOnTheOccupantsOwnSettle(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
 	target := noVerbSeat(t, b, "ranger-qa-a-1", MuxIdle)
@@ -235,7 +255,42 @@ func TestQATheSettleLadderConcedesNamingTheRuleAndNotHerdr(t *testing.T) {
 	d.Poll = 10 * time.Millisecond
 	wait := 150 * time.Millisecond
 
-	status, det, err := d.awaitSettled("ranger-base-l32dl", "ranger-qa-a-1", target,
+	status, det, err := d.awaitSettled("ranger-base-25otk", "ranger-qa-a-1", target,
+		[]string{MuxIdle, MuxDone, MuxBlocked}, time.Now().Add(wait), wait)
+	if err != nil || status != MuxIdle {
+		t.Fatalf("the ladder refused a settle its own occupant reported: %q %v\n%s", status, err, out.String())
+	}
+	// The ACCEPT's evidence, which is the half that makes this a settle and
+	// not the concession wearing one: the gate reading posse carries into a
+	// stall record says it was seen (ADR 0066 D1 as amended, ranger-base-o1aoi).
+	if !det.Seen() {
+		t.Errorf("the gate opened on a reading that does not read as seen, so the record it types under cannot say what opened it: %+v", det)
+	}
+	if line := out.String(); strings.Contains(line, "prompting on its") || strings.Contains(line, "ADR 0076 §4") {
+		t.Errorf("the ladder conceded over a settle it was handed — that is the bug, not the degrade:\n%s", line)
+	}
+}
+
+// settledNoEvidenceMux is 4b's occupant: not herdr, not Rex, and its `Wait`
+// answers a settled state with no positive evidence behind it. The embedded
+// nil interface is never called — the ladder's only other call is the §4 door,
+// which decides by type assertion (noVerbMux's own note, runtimesession_qa_test.go).
+type settledNoEvidenceMux struct{ Mux }
+
+func (settledNoEvidenceMux) Wait(Seat, []string, int) (MuxReading, error) {
+	return MuxReading{State: MuxIdle}, nil
+}
+
+func TestQATheSettleLadderConcedesNamingTheRuleAndNotHerdr(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	b.Slot = settledNoEvidenceMux{}
+	var out strings.Builder
+	d := NewDispatcher(b.App, b, &out)
+	d.Poll = 10 * time.Millisecond
+	wait := 150 * time.Millisecond
+
+	status, det, err := d.awaitSettled("ranger-base-l32dl", "ranger-qa-a-1", Seat{Session: "s", Pane: "p"},
 		[]string{MuxIdle, MuxDone, MuxBlocked}, time.Now().Add(wait), wait)
 	// The degrade, unmoved.
 	if err != nil || status != MuxIdle {

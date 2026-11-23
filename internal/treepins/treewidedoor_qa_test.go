@@ -660,6 +660,13 @@ package treepins
 //	TestQAProcessNoticesResolveThroughTheDeclaredSeams
 //	                                              make pkgcensus-check
 //	TestQATheExplainDegradeSentenceHasOneHome     make pkgcensus-check
+//	TestQATheMuxSeenFieldHasOneHome               make pkgcensus-check
+//	                                              (ranger-base-25otk: the
+//	                                              one field that can open
+//	                                              the settle gate on the
+//	                                              occupant's own reading,
+//	                                              and the one place it may
+//	                                              be set)
 //	TestQAEveryCountedSkipReasonHasAReportingSite make pkgcensus-arm2-check
 //	TestQAEveryTestBinaryReExecKeepsTheChildATestBinary
 //	                                              make pkgcensus-arm2-check
@@ -1589,7 +1596,7 @@ package treepins
 // eleven rows are NOT counted as pins, because the pin count is the union of
 // the door variables and an exclusion is not a membership.
 //
-// and `make tree-check` is all of them — one hundred and sixty-six pins
+// and `make tree-check` is all of them — one hundred and sixty-seven pins
 // and fourteen doors, 71.3-77.7s over three warm runs at one hundred and
 // twenty-six of them (MEASURED 2026-11-08, ranger-base-72oz4: 75.5s, 77.7s
 // then 71.3s in that order, at a one-minute load average of 7.54, 6.35 and
