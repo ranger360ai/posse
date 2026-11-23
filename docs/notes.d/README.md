@@ -19,6 +19,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-wiklv](ranger-base-wiklv.md) — Check 4's file boundary was already fixed; what still reproduced it was the install (ranger-base-wiklv) — 2026-11-22
 - [ranger-base-wbwqm](ranger-base-wbwqm.md) — Two clauses whose stated payoff no pin read (ranger-base-wbwqm) — 2026-11-22
 - [ranger-base-w6kke](ranger-base-w6kke.md) — ranger-base-w6kke: the watcher's words on the one line the wall check carries — 2026-11-22
+- [ranger-base-vyz61](ranger-base-vyz61.md) — ranger-base-vyz61 — the one figure in that file no arm prints, and how to re-derive it — 2026-11-22
 - [ranger-base-uu303](ranger-base-uu303.md) — ranger-base-uu303 — the account's place inside the 300, measured — 2026-11-22
 - [ranger-base-u5ez8](ranger-base-u5ez8.md) — A tree-wide pin over the refusals trail, and the two rules that do not work (ranger-base-u5ez8) — 2026-11-22
 - [ranger-base-t0ha1](ranger-base-t0ha1.md) — Four closes verified, and the arm a census cannot see (ranger-base-t0ha1) — 2026-11-22

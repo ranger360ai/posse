@@ -310,14 +310,32 @@ package treepins
 // AND THE TERM IS STILL WITNESSED HERMETICALLY AND NOT BY THE TREE, for
 // ranger-base-dxaxt's own reason one reading on (its mutant 8: the whole
 // prefix replaced by a constant 0 and arm 6 stays green). A mutant answering
-// "not a helper" everywhere charges those eight 27 to 41 where the decision
+// "not a helper" everywhere charges those nine 27 to 41 where the decision
 // charges 44, and arm 6 is green either way — so the reading and the
 // arithmetic are both held in arm 7 over planted source, including the
 // distinction that decided the reading: a closure inside a helper is its own
 // frame unless it calls t.Helper() itself, and the sloppier "a Helper() call
-// anywhere under the enclosing FuncDecl" reads nine of the 65 rather than
-// eight, the ninth (wallwatchlive_test.go:614) written in a test body beside
-// a closure that is a helper.
+// anywhere under the enclosing FuncDecl" reads ten of the 66 rather than
+// nine, the tenth written in a test body beside a closure that is a helper —
+// arm 7's `BESIDE THAT CLOSURE` row plants that case and names the member
+// line it stands for, which is the one place that line number is typed.
+//
+// AND THE SLOPPIER READING'S COUNT IS PRINTED BY NOTHING, which is why this
+// paragraph went stale a fourth time (ranger-base-vyz61). The
+// helper-rendered set IS printed — arm 6's Logf lists it by file and line,
+// and that is the reading to take — but the sloppier reading exists only as
+// arm 7's hermetic mutant, so its count is RE-DERIVED and never read off a
+// run: mutate wmaFuncSpans to drop the FuncLit span and the FuncLit bail,
+// and read arm 6's own Logf under the mutant.
+// docs/notes.d/ranger-base-vyz61.md carries that battery and its output, so
+// the next landing that moves the member set re-runs it instead of inventing
+// it. RE-DERIVED 2026-11-22 at 3c296c07 (linux 7.2.15-1-omarchy, go1.27.3):
+// the nine charge 27 (five of them), 30 (two) and 41 (two) at their own
+// positions against the decision's 44 — the ninth being the parameter
+// route's own message at 30, inside the range it was already in, which is
+// why ranger-base-x1ofd's route widened the count and not the arithmetic —
+// and the sloppier reading adds exactly one message, with arm 6 GREEN under
+// both mutants and arm 7 red under each.
 //
 // IT ENUMERATES A DISCOVERED FILE SET (the Glob below), so it is in this
 // package's one-package-census class and is doored by `make treepins-check` —
@@ -1253,11 +1271,15 @@ func wmaChargedPrefix(m wmaMsg, widestBase string) (chars int, how string) {
 // CALLS it, so a closure inside a helper is an ordinary frame unless it calls
 // t.Helper() itself, and a helper's caller is reached by the CALL stack and
 // not by this lexical one. That distinction is the whole of what this reading
-// had to get right — MEASURED 2026-11-22 over the member set, the sloppier
-// "a Helper() call anywhere under the enclosing FuncDecl" reads nine of arm
-// 6's 65 messages where this reads eight, and the one it adds
-// (wallwatchlive_test.go:614) is written in a test body beside a closure that
-// is a helper, so go test decorates it with its own file and line.
+// had to get right: over the member set the sloppier "a Helper() call
+// anywhere under the enclosing FuncDecl" reads ONE message more than this
+// does, written in a test body beside a closure that is a helper, so go test
+// decorates it with its own file and line. Arm 7 plants that case (`BESIDE
+// THAT CLOSURE`) and names the member line it stands for; the two counts and
+// how they are re-derived are said ONCE, in this file's head comment under
+// "AND THE SLOPPIER READING'S COUNT IS PRINTED BY NOTHING" — this bullet and
+// that paragraph each carrying its own copy of the pair is how both went
+// stale (ranger-base-vyz61).
 type wmaFuncSpan struct {
 	pos, end token.Pos
 	name     string
