@@ -55,6 +55,20 @@ package posse
 // would be a worse regression than the bug. A guess is a real answer and
 // holds the full wait; only the never-answered case is cut short.
 //
+// AND WHERE THE READING IS NOT HERDR'S TO TAKE (ranger-base-q5fee, ADR 0076
+// Amendment 13). The paragraph above is about a diagnostic that is not
+// WORKING. A `multiplexer: rex` instance is a different fact: `agent explain`
+// is a §4 verb that occupant does not have, so the concession was taken on
+// every poll of every prompt for the life of the instance — 518 of them in
+// the measured window, every one the pulse — and the detection handed back
+// was the zero one, which is what the pulse's own "do not nudge a persona
+// mid-turn" rule reads. `Mux().State` is NOT a §4 verb: it is one of §2's
+// ten, every occupant answers it, and §3 declares its `Seen` the Rex form of
+// the `Seen()` this gate opens on. So the loop below asks the occupant where
+// §4's door said "not available", and opens on its answer. The concession is
+// unmoved for a reading with no evidence in it — unknown is never no, and the
+// keystroke's own refusals are at the delivery verb (muxsettle.go).
+//
 // AND THE PANE WITH NO SCREEN READING AT ALL (ranger-base-8eqaa, folded into
 // this gate by ranger-base-nm5i6). Everything above is about `agent explain`,
 // which herdr refuses outright for a pane whose agent label it did not detect
@@ -109,6 +123,14 @@ const (
 // diagnostic that is not working is evidence of no state at all — and on
 // the refusal it is the last guess, which is what the error already
 // describes.
+//
+// ON A §4-MISSING OCCUPANT the opening detection is the occupant's own
+// reading (MuxSeen, ADR 0076 Amendment 13) rather than herdr's: a state and
+// the evidence behind it, with no rule to name and no screen to quote. Every
+// caller that reads this value reads it through `Seen()` and `State`, which
+// is what that detection carries; what it does not carry is a composer, so a
+// caller that wants one asks for it where it can be had on either occupant
+// (PaneHolding, ranger-base-um1bi).
 func (b *HerdrBackend) AwaitPromptable(session string, target Seat) (AgentDetection, string, error) {
 	// No reported pre-check here since ranger-base-nm5i6: AgentExplain's own
 	// refusal is what routes a reported pane onto its reading, so the loop
@@ -125,6 +147,23 @@ func (b *HerdrBackend) AwaitPromptable(session string, target Seat) (AgentDetect
 	// working" (worth neither).
 	answered := false
 	attempts := 0
+	// opened is the gate's one exit on positive evidence, and it is a closure
+	// because there are two ways to get it now (ranger-base-q5fee): herdr's
+	// own detection, and — where §4's reading is not available at all — the
+	// occupant's answer to §2's `State`. The NOTE rule is the same either
+	// way, and a second copy of it would be a second rule.
+	//
+	// News is a second `agent explain`, not a slow first one: a box under
+	// load can make one subprocess call take longer than a poll all by
+	// itself, and that is not the gate looping — it is the ordinary cost of
+	// asking (ranger-base-vstc).
+	opened := func(det AgentDetection) (AgentDetection, string, error) {
+		if attempts > 1 {
+			return det, fmt.Sprintf("waited %s for %s %s (%s)",
+				time.Since(start).Round(100*time.Millisecond), session, waitedFor(det), seenBy(det)), nil
+		}
+		return det, "", nil
+	}
 	var lastGuess AgentDetection
 	// The ERROR and not its text: the concession below asks it which of ADR
 	// 0076 §4's two causes it is — a verb that failed, or a multiplexer that
@@ -136,16 +175,26 @@ func (b *HerdrBackend) AwaitPromptable(session string, target Seat) (AgentDetect
 		switch {
 		case err != nil:
 			lastErr = err
-		case det.Seen():
-			// News is a second `agent explain`, not a slow first one: a box
-			// under load can make one subprocess call take longer than a
-			// poll all by itself, and that is not the gate looping — it is
-			// the ordinary cost of asking (ranger-base-vstc).
-			if attempts > 1 {
-				return det, fmt.Sprintf("waited %s for %s %s (%s)",
-					time.Since(start).Round(100*time.Millisecond), session, waitedFor(det), seenBy(det)), nil
+			// THE OCCUPANT'S OWN ANSWER TO THIS GATE'S OWN QUESTION (ADR 0076
+			// Amendment 13, ranger-base-q5fee). Only where §4's reading is
+			// NOT AVAILABLE, which is the door `muxSeen` holds: `Mux().State`
+			// is one of §2's ten verbs, so an occupant that has no `agent
+			// explain` answers it anyway, and what it answers with is the
+			// field §3 declares to be the Rex form of `Seen()`.
+			//
+			// This gate's rule is "a CLI that holds the keyboard" and not a
+			// particular state (this file's "what this gate deliberately is
+			// not"), so the predicate is the evidence alone. Before this, a
+			// §4-missing instance conceded here with the ZERO detection on
+			// every poll it ever took — 518 of them in the measured window,
+			// all of them the pulse, whose "do not nudge a persona mid-turn"
+			// rule reads this detection and so could never fire
+			// (muxsettle.go's census).
+			if det, ok := b.muxSeen(target, err); ok {
+				return opened(det)
 			}
-			return det, "", nil
+		case det.Seen():
+			return opened(det)
 		default:
 			lastErr, answered, lastGuess = nil, true, det
 		}
@@ -239,6 +288,14 @@ func orUnknown(state string) string {
 // saying it finally did would be the one sentence in the note that is false
 // (ADR 0061 D3.3, the success side of it).
 func waitedFor(det AgentDetection) string {
+	if det.MuxSeen {
+		// The §4-missing route (ranger-base-q5fee). There is no screen herdr
+		// will ever recognize here either, and for a third reason: herdr is
+		// not the multiplexer. What was waited for is the occupant's own
+		// report, which is what §3 makes posse's evidence on such an
+		// instance.
+		return "for its multiplexer to report a runtime holding the keyboard"
+	}
 	if det.Reported != "" {
 		return "to be labelled by the authority that labels its panes"
 	}
@@ -254,6 +311,12 @@ func seenBy(det AgentDetection) string {
 		return fmt.Sprintf("%s via rule %q", det.State, det.Rule.ID)
 	case det.VisibleIdle:
 		return fmt.Sprintf("%s, visible chrome", det.State)
+	case det.MuxSeen:
+		// orUnknown and not the raw state: an occupant may answer this
+		// question with evidence and no state (MuxReading's own doc), and
+		// this gate accepts that because the state is not what it asked.
+		// A note with a bare `""` in it would read as a missing word.
+		return fmt.Sprintf("%s, reported by this instance's multiplexer (ADR 0076 §3)", orUnknown(det.State))
 	}
 	return fmt.Sprintf("%s, reported for agent %q (herdr detects no such kind)", det.State, det.Reported)
 }

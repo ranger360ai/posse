@@ -38,6 +38,13 @@ package posse
 //     reaches this renderer through an occupant that answers §2's verb with
 //     a state and nothing else — the shape herdr's own envelope has and the
 //     interface permits. Arm 4a is the accept, against the real occupant.
+//     SINCE AMENDMENT 13 (ranger-base-q5fee) all three are split that way,
+//     because all three now ask the occupant where §4's reading is not
+//     available. 3a and 5a are the accepts; 3b drives the concession with a
+//     reading the REAL occupant can answer and that is not evidence — a
+//     record the block's own shell wrote (§3's second guard) — and 5b needs
+//     the stand-in, for a reason that is a property of the occupant and is in
+//     noEvidenceMux's own doc.
 //  4. THE DEGRADE DID NOT MOVE. ADR 0076 §4's reading is "not available" and
 //     never a "no", so each arm below asserts the concession still happens:
 //     the gather goes on, the prompt goes out, the gate stands down. That is
@@ -181,17 +188,38 @@ func TestQATheExplainDegradeSentenceHasOneHome(t *testing.T) {
 // not have. Rex is the occupant the incident was observed on.
 func noVerbSeat(t *testing.T, b *HerdrBackend, session string, states ...string) Seat {
 	t.Helper()
+	// One record per call, and the LAST one repeats: a one-element queue is a
+	// constant answer (fakerex_test.go), which is what a seat that stays in
+	// one state looks like.
+	recs := make([][]RexStatusRecord, 0, len(states))
+	for _, st := range states {
+		recs = append(recs, []RexStatusRecord{rexRuntimeRec(st)})
+	}
+	return noVerbSeatReading(t, b, session, rexRuntimeProc(), recs...)
+}
+
+// noVerbSeatAtShell is the same instance holding the one reading that is NOT
+// one: the block's own SHELL wrote the record, which is ADR 0076 §3's second
+// guard, so the occupant answers `unknown` with no evidence behind it
+// (rexReading). It is what the three ladders' concessions are driven with
+// since ranger-base-q5fee — on the REAL occupant and not a stand-in, because
+// this is a shape the production box has: a seat whose runtime never started,
+// or whose runtime has ended and left the shell at its prompt, which is
+// ranger-base-3p0's own incident.
+func noVerbSeatAtShell(t *testing.T, b *HerdrBackend, session string) Seat {
+	t.Helper()
+	return noVerbSeatReading(t, b, session, rexShellProc(),
+		[]RexStatusRecord{{State: MuxIdle, App: "zsh", Owner: rexTestShellOwner(10)}})
+}
+
+func noVerbSeatReading(t *testing.T, b *HerdrBackend, session string, proc RexProcess, recs ...[]RexStatusRecord) Seat {
+	t.Helper()
 	m, _ := newTestRexMux(t)
 	b.Slot = m
 	rexSeedSessions(t, fakeRexSession{SessionID: rexTestSession, Label: b.App.WorkspaceLabel(session),
 		Blocks: []fakeRexBlock{{BlockID: rexTestBlock, Label: "shell", Flavor: RexTerminalFlavor}}})
-	rexSeedProcess(t, rexTestBlock, rexRuntimeProc())
-	// One record per call, and the LAST one repeats: a one-element queue is a
-	// constant answer (fakerex_test.go), which is what a seat that stays in
-	// one state looks like.
-	for _, st := range states {
-		rexSeedStatus(t, rexTestBlock, []RexStatusRecord{rexRuntimeRec(st)})
-	}
+	rexSeedProcess(t, rexTestBlock, proc)
+	rexSeedStatus(t, rexTestBlock, recs...)
 	if err := os.MkdirAll(b.App.RuntimesDir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -203,12 +231,60 @@ func noVerbSeat(t *testing.T, b *HerdrBackend, session string, states ...string)
 	return Seat{Session: rexTestSession, Pane: rexTestBlock}
 }
 
-// Arm 3 — the readiness gate (promptready.go). The gate stands down and says
-// so, and what it says is the §4 sentence.
+// Arm 3 — the readiness gate (promptready.go), in the two halves ADR 0076
+// Amendment 13 split it into (ranger-base-q5fee), for arm 4's reason one site
+// over. The gate now ASKS the occupant where §4's reading is not available,
+// so a seat whose runtime is reporting no longer reaches the concession at
+// all; 3b drives it with the reading that is not one — a record the block's
+// own shell wrote — which is a shape the real occupant has.
+//
+// 3a is the accept. The gate's rule is "a CLI that holds the keyboard" and
+// NOT a settled state (promptready.go's "what this gate deliberately is
+// not"), so it is asserted over `working`: the one state that tells this
+// gate's predicate apart from muxSettledGate's, and the state the pulse's own
+// rule then has to refuse.
+func TestQAThePromptGateOpensOnTheOccupantsOwnReading(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	target := noVerbSeat(t, b, "ranger-qa-a-1", MuxWorking)
+
+	start := time.Now()
+	det, note, err := b.AwaitPromptable("ranger-qa-a-1", target)
+	spent := time.Since(start)
+	if err != nil {
+		t.Fatalf("the gate refused a keyboard its own occupant reports a runtime on: %v", err)
+	}
+	if !det.Seen() || det.State != MuxWorking {
+		t.Fatalf("the gate opened on something other than the occupant's reading: %+v", det)
+	}
+	// THE READING THE PULSE'S RULE NEEDS, in the pulse's own expression
+	// (pulse.go: `det.Seen() && !pulseTakesPrompt(det.State)`). That rule is
+	// what keeps a shop check off a persona mid-turn, and on a §4-missing
+	// instance it has never once been able to fire — 518 concessions in the
+	// measured window, every one of them the pulse, each handing it the zero
+	// detection (muxsettle.go's census). The other half of this property —
+	// that the pulse applies that rule to THIS gate's detection — is
+	// TestPulseSkipsAWorkingScreenTheListingCalledIdle.
+	if !(det.Seen() && !pulseTakesPrompt(det.State)) {
+		t.Errorf("the pulse's own guard cannot fire over the gate's reading, so a shop check would land mid-turn: %+v", det)
+	}
+	// One poll and no grace spent: the concession's bound is what the gate
+	// used to pay here on every prompt, and the occupant answers before the
+	// first sleep.
+	if spent >= promptExplainGrace {
+		t.Errorf("the gate spent %s of its %s concession grace on a reading it had from the first poll", spent, promptExplainGrace)
+	}
+	if note != "" {
+		t.Errorf("a gate that opened on the first poll has nothing to report: %q", note)
+	}
+}
+
+// 3b — the concession, with the one reading the occupant can answer that is
+// not evidence of anything. The §4 sentence is unmoved.
 func TestQAThePromptGateStandsDownNamingTheRuleAndNotHerdr(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
-	target := noVerbSeat(t, b, "ranger-qa-a-1", MuxIdle)
+	target := noVerbSeatAtShell(t, b, "ranger-qa-a-1")
 
 	det, note, err := b.AwaitPromptable("ranger-qa-a-1", target)
 	// The degrade, unmoved: a reading nobody could take is never a refusal.
@@ -271,20 +347,67 @@ func TestQATheSettleLadderOpensOnTheOccupantsOwnSettle(t *testing.T) {
 	}
 }
 
-// settledNoEvidenceMux is 4b's occupant: not herdr, not Rex, and its `Wait`
-// answers a settled state with no positive evidence behind it. The embedded
-// nil interface is never called — the ladder's only other call is the §4 door,
-// which decides by type assertion (noVerbMux's own note, runtimesession_qa_test.go).
-type settledNoEvidenceMux struct{ Mux }
+// noEvidenceMux is 4b's and 5b's occupant: not herdr, not Rex, and its `Wait`
+// and `State` both answer a settled state with no positive evidence behind it
+// — the shape herdr's own wait envelope has ("Seen is never derived from
+// State") and one ADR 0076 §2 permits. Every other verb is the embedded nil
+// interface and is never called; the ladders' only other call is the §4 door,
+// which decides by type assertion (noVerbMux's own note,
+// runtimesession_qa_test.go).
+//
+// IT IS WHAT THE TWO CONCESSIONS NEED SINCE ranger-base-q5fee, and `List` is
+// why 5b cannot use the real occupant the way 3b does. On Rex a no-evidence
+// reading is not a listed seat at all — `RexMux.List` drops a block whose
+// reading has no `Seen` ("the Rex form of the unknown MEANS NONE rule") — so
+// `awaitTarget` fails first and `awaitDelivered`'s concession is unreachable
+// on that occupant from either side: with evidence it takes the new
+// observation arm, and without it there is no target to observe. Keeping the
+// arm pinned therefore takes an occupant that can still get there, which is
+// the same argument Amendment 12 made for 4b.
+type noEvidenceMux struct{ Mux }
 
-func (settledNoEvidenceMux) Wait(Seat, []string, int) (MuxReading, error) {
+func (noEvidenceMux) Wait(Seat, []string, int) (MuxReading, error) {
 	return MuxReading{State: MuxIdle}, nil
+}
+
+func (noEvidenceMux) State(Seat) (MuxReading, error) {
+	return MuxReading{State: MuxIdle}, nil
+}
+
+// Server is ADR 0076 §5's triple, which is not a verb and is asked of every
+// occupant before a listing may name a seat (listSessions): a record whose
+// server this pass cannot name is withheld, so a stub without it is a stub
+// whose seat no ladder can resolve.
+func (noEvidenceMux) Server() MuxServer {
+	return MuxServer{Name: MuxRex, Addr: noEvidenceAddr}
+}
+
+const noEvidenceAddr = "qa-no-evidence"
+
+func (noEvidenceMux) List() ([]SeatInfo, error) {
+	return []SeatInfo{{
+		Seat:  Seat{Session: rexTestSession, Pane: rexTestBlock},
+		State: MuxIdle,
+		Panes: []SeatPane{{Pane: rexTestBlock, Kind: "claude-code", State: MuxIdle}},
+	}}, nil
+}
+
+// noEvidenceSeat is that occupant in the slot, with the meta a ladder needs to
+// resolve the seat by session name.
+func noEvidenceSeat(t *testing.T, b *HerdrBackend, session string) Seat {
+	t.Helper()
+	b.Slot = noEvidenceMux{}
+	if err := b.writeMeta(&HerdrMeta{Name: session, Workspace: rexTestSession, Pane: rexTestBlock,
+		Agent: "ranger", Runtime: "fastcli", Mux: MuxRex, Socket: noEvidenceAddr, Launched: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	return Seat{Session: rexTestSession, Pane: rexTestBlock}
 }
 
 func TestQATheSettleLadderConcedesNamingTheRuleAndNotHerdr(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
-	b.Slot = settledNoEvidenceMux{}
+	b.Slot = noEvidenceMux{}
 	var out strings.Builder
 	d := NewDispatcher(b.App, b, &out)
 	d.Poll = 10 * time.Millisecond
@@ -310,13 +433,40 @@ func TestQATheSettleLadderConcedesNamingTheRuleAndNotHerdr(t *testing.T) {
 	}
 }
 
-// Arm 5 — the delivered wait (dispatch.go's awaitDelivered). This is the one
-// the incident's log was full of: it runs per seat on the gather path, so on
-// a Rex instance it is the line that printed forever.
-func TestQATheDeliveredWaitConcedesNamingTheRuleAndNotHerdr(t *testing.T) {
+// Arm 5 — the delivered wait (dispatch.go's awaitDelivered), split the same
+// way for the same reason (ranger-base-q5fee).
+//
+// 5a is the OBSERVATION. The question this site asks is "has a runtime been
+// seen in this seat", any state, so the occupant's own reading answers it —
+// and the arm returns silently, because a reading that answered is not news.
+// MEASURED: this site's concession has fired 0 times on the live instance (no
+// `prompt: argv` runtime has launched here), so unlike arm 3 this half is a
+// shape closed before it was paid.
+func TestQATheDeliveredWaitObservesTheOccupantsOwnReading(t *testing.T) {
 	t.Parallel()
 	b, _ := newTestBackend(t)
 	noVerbSeat(t, b, "ranger-qa-a-1", MuxIdle)
+	var out strings.Builder
+	d := NewDispatcher(b.App, b, &out)
+	d.Poll = 10 * time.Millisecond
+
+	target, seen, err := d.awaitDelivered("ranger-base-q5fee", "ranger-qa-a-1", "fastcli", 150*time.Millisecond)
+	if want := (Seat{Session: rexTestSession, Pane: rexTestBlock}); err != nil || target != want || !seen {
+		t.Fatalf("the delivered wait did not observe the occupant's own reading: %+v seen=%v %v\n%s", target, seen, err, out.String())
+	}
+	if line := out.String(); line != "" {
+		t.Errorf("the observation printed — it is a reading that answered, not a concession:\n%s", line)
+	}
+}
+
+// 5b — the concession. This is the one the incident's log was full of: it
+// runs per seat on the gather path, so on an instance with no reading to take
+// it is the line that printed forever. Driven through noEvidenceMux, whose
+// own doc says why the real occupant can no longer reach it.
+func TestQATheDeliveredWaitConcedesNamingTheRuleAndNotHerdr(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	noEvidenceSeat(t, b, "ranger-qa-a-1")
 	var out strings.Builder
 	d := NewDispatcher(b.App, b, &out)
 	d.Poll = 10 * time.Millisecond

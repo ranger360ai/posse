@@ -6408,6 +6408,14 @@ func (d *Dispatcher) detectionWhy(runtime string) string {
 //     not judge the bead, because starting a settle-wait here would be
 //     waiting on herdr's idle guess, which returns instantly and would read
 //     a session that never worked as one that settled.
+//
+// ON AN OCCUPANT WITH NO `agent explain` the screen is not where the evidence
+// is (ADR 0076 Amendment 13, ranger-base-q5fee): `Mux().State` is one of §2's
+// ten verbs and its `Seen` is the same fact `det.Seen()` is, so the §4 arm
+// below asks the occupant before it concedes. On this instance the answer is
+// already there by construction — §3's launch rule waited for that very
+// record before the prompt's line was typed (confirmReports) — so the first
+// poll answers and the window is never spent.
 func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Duration) (target Seat, seen bool, err error) {
 	deadline := time.Now().Add(wait)
 	target, err = d.awaitTarget(session, runtime, deadline, wait)
@@ -6424,6 +6432,25 @@ func (d *Dispatcher) awaitDelivered(id, session, runtime string, wait time.Durat
 		det, derr := d.HB.explain(target)
 		switch {
 		case derr != nil:
+			// THE OCCUPANT'S OWN ANSWER FIRST, where §4's reading is not
+			// available at all (ADR 0076 Amendment 13, ranger-base-q5fee).
+			// The question this loop asks is "has a runtime been seen in
+			// this seat" — any state, because detectability is what says the
+			// launch line ran — and that is `MuxReading.Seen` exactly. So
+			// where it is there, this returns an OBSERVATION and not the
+			// concession below: silently, like the `det.Seen()` arm, because
+			// a reading that answered is not news and an observation that
+			// succeeded is not one of ADR 0066 D1's consequences.
+			//
+			// What it buys is `seen` meaning what it says. The concession
+			// returns true as well, so nothing downstream moves on this
+			// instance today — but `launched.unseen` is what decides whether
+			// the bead is judged this pass, and a `true` that came from "the
+			// diagnostic could not be taken" is not the same fact as a
+			// `true` the occupant reported.
+			if _, ok := d.HB.muxSeen(target, derr); ok {
+				return target, true, nil
+			}
 			// The same concession awaitSettled makes: a diagnostic call
 			// that fails is not evidence either way, and here there is even
 			// less at stake — nothing is about to be typed into the pane.

@@ -37,9 +37,28 @@ package posse
 //  6. the licensing field has ONE HOME (arm 6), mechanically, over this
 //     package's own non-test sources. A `Seen()` that can open a gate may
 //     only come from the occupant's own answer to §2's verb.
+//
+// ARMS 7-9 ARE ranger-base-q5fee's, the same field at the other two ladders
+// (ADR 0076 Amendment 13). The readiness gate and the delivered wait took the
+// §4 concession with no occupant reading at all, and the verb that answers
+// them — `Mux().State` — is one of §2's ten rather than a §4 one, so it
+// answers on every occupant:
+//
+//  7. the readiness half is the EVIDENCE ALONE (arm 7), which is not a
+//     loosening of arm 1 but the other gate's own rule: it opens on a CLI
+//     that holds the keyboard whatever the state, `working` included, and
+//     arm 1's own table is what keeps the settle gate from doing the same.
+//  8. THE DOOR IS §4's "NOT AVAILABLE" and not "the explain errored" (arm 8).
+//     `HerdrMux.State` IS `agent explain` flattened, so on herdr the read
+//     would be a retry of the call that just failed — asserted as a call that
+//     is never made, over the occupant's own call log.
+//  9. HERDR CANNOT REACH IT (arm 9), and it is the same blast radius as arm 5
+//     reached by the other route: herdr's §4 door never answers "unavailable"
+//     at all, so no herdr ladder takes the arm whatever its explain did.
 
 import (
 	"encoding/json"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -291,5 +310,141 @@ func TestQATheMuxSeenFieldHasOneHome(t *testing.T) {
 	}
 	for w := range want {
 		t.Errorf("%s no longer declares or sets AgentDetection.%s — if the field moved, this pin's subject moved with it", w, field)
+	}
+}
+
+// ─── arm 7: the readiness half is the evidence alone ─────────────────────────
+
+// TestQATheSeenAcceptAsksForTheEvidenceAndNotTheState is arm 1's table over
+// the other predicate. The two gates differ in exactly one clause and the
+// difference is deliberate: `working` with evidence is a pane whose CLI has
+// the keyboard (open the readiness gate) and is not a settle (refuse the
+// settle gate), which is the whole of ADR 0076 Amendment 13's D1.
+//
+// A state this package does not know, and no state at all, are accepted here
+// for the same reason: the question asked is about the keyboard, and the gates
+// that care about the state ask it themselves. Both of this arm's callers
+// deliberately do not — and what reads the state afterwards is the pulse's own
+// idle|done rule, which refuses both of those readings on its own (arm 3a of
+// muxnoverb_qa_test.go pins that expression over the gate's real output).
+func TestQATheSeenAcceptAsksForTheEvidenceAndNotTheState(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name string
+		read MuxReading
+		want bool
+	}{
+		{"idle with evidence", MuxReading{State: MuxIdle, Seen: true}, true},
+		{"done with evidence", MuxReading{State: MuxDone, Seen: true}, true},
+		// The clause the two gates do not share. muxSettledGate answers
+		// false for these three (arm 1) and must keep doing so.
+		{"working with evidence", MuxReading{State: MuxWorking, Seen: true}, true},
+		{"blocked with evidence", MuxReading{State: MuxBlocked, Seen: true}, true},
+		{"unknown with evidence", MuxReading{State: MuxUnknown, Seen: true}, true},
+		{"no state at all, with evidence", MuxReading{Seen: true}, true},
+		// The half both gates share, and the only one either may refuse on:
+		// a state nothing says the runtime is behind.
+		{"idle without evidence", MuxReading{State: MuxIdle}, false},
+		{"working without evidence", MuxReading{State: MuxWorking}, false},
+		{"nothing at all", MuxReading{}, false},
+	} {
+		det, ok := muxSeenGate(c.read)
+		if ok != c.want {
+			t.Errorf("%s: muxSeenGate = %v, want %v", c.name, ok, c.want)
+		}
+		if !ok {
+			if det.State != "" || det.Seen() {
+				t.Errorf("%s: a reading this arm cannot act on handed back a detection a caller could branch on: %+v", c.name, det)
+			}
+			continue
+		}
+		if det.State != c.read.State || !det.Seen() {
+			t.Errorf("%s: the accepted detection must carry the occupant's state and read as seen: %+v", c.name, det)
+		}
+		// And the settle gate is unmoved by this file's refactor: it is the
+		// same evidence half plus its own state half, so exactly the two
+		// settled states pass it.
+		_, settled := muxSettledGate(c.read)
+		if want := c.read.State == MuxIdle || c.read.State == MuxDone; settled != want {
+			t.Errorf("%s: muxSettledGate = %v, want %v — the two gates share the evidence half and nothing else", c.name, settled, want)
+		}
+	}
+}
+
+// ─── arm 8: the door is §4's "not available" ─────────────────────────────────
+
+// TestQATheOccupantIsAskedOnlyWhereTheVerbIsUnavailable pins the door as a
+// property of the ERROR value and, for the negative, as a call that is never
+// made. `HerdrMux.State` is `agent explain` flattened — the same subprocess,
+// the same answer — so a read taken because an explain FAILED would be a retry
+// of that failure at the same instant: no second reading, one more call per
+// poll, and a fake herdr's `explain-error-after N` / `explain-error-for N`
+// countdowns (which count CALLS) silently off by one.
+func TestQATheOccupantIsAskedOnlyWhereTheVerbIsUnavailable(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	b.Slot = rexSeatWithRuntime(t,
+		[]RexStatusRecord{rexRuntimeRec(MuxIdle)},
+		[]RexStatusRecord{rexRuntimeRec(MuxIdle)},
+		[]RexStatusRecord{rexRuntimeRec(MuxIdle)})
+	target := Seat{Session: rexTestSession, Pane: rexTestBlock}
+
+	// The door open: §4's own answer, and the same answer wrapped on its way
+	// up — errors.As and not a string compare, which is what muxVerbMissing
+	// is a type for.
+	for _, err := range []error{
+		muxNotHerdr("agent explain"),
+		fmt.Errorf("gathering %s: %w", "ranger-qa-a-1", muxNotHerdr("agent explain")),
+	} {
+		det, ok := b.muxSeen(target, err)
+		if !ok || !det.Seen() || det.State != MuxIdle {
+			t.Errorf("muxSeen over %v = (%+v, %v), want the occupant's own idle reading", err, det, ok)
+		}
+	}
+
+	// The door shut, and no call made. A nil error is "the explain answered,
+	// so this is not the ladder's §4 arm at all"; the rest are verbs that
+	// were asked and failed.
+	before := len(rexCalls(t))
+	for _, err := range []error{
+		nil,
+		Die("agent_not_found: no detection for w1:p1"),
+		HerdrAPIError{Code: "internal", Message: "fake herdr: gone"},
+	} {
+		if det, ok := b.muxSeen(target, err); ok {
+			t.Errorf("muxSeen asked the occupant over %v and answered %+v — the door is the verb being UNAVAILABLE, not a verb that failed", err, det)
+		}
+	}
+	if after := len(rexCalls(t)); after != before {
+		t.Errorf("the occupant was called %d time(s) for an error that is not §4's — on herdr that call is a retry of the explain that just failed:\n%s",
+			after-before, strings.Join(rexCalls(t)[before:], "\n"))
+	}
+}
+
+// ─── arm 9: herdr cannot reach the arm ───────────────────────────────────────
+
+// TestQAAHerdrExplainFailureIsNeverTheUnavailableAnswer is the blast radius,
+// asserted through the real door rather than by reading a comment: with herdr
+// in the slot, every way `b.explain` can fail is a verb that was ASKED, so
+// muxVerbMissing answers false and the arm is unreachable on that occupant —
+// the ladder, the grace and the concession are the ones it always had.
+//
+// Arm 5 makes the same claim about the settle gate from the other side (a
+// herdr wait envelope carries no evidence to accept). Both are needed: that
+// one is about the reading, this one is about the door.
+func TestQAAHerdrExplainFailureIsNeverTheUnavailableAnswer(t *testing.T) {
+	t.Parallel()
+	b, fake := newTestBackend(t)
+	write(t, filepath.Join(fake, "explain-error"), "agent_explain_unavailable|fake herdr: gone")
+
+	_, err := b.explain(Seat{Session: "w1", Pane: "p1"})
+	if err == nil {
+		t.Fatal("the fake herdr's explain-error lever did not fire — this arm asserts about a failure")
+	}
+	if verb, missing := muxVerbMissing(err); missing {
+		t.Errorf("a herdr explain that FAILED read as %q being unavailable — the two causes are what ranger-base-l32dl split and what this arm's door reads", verb)
+	}
+	if det, ok := b.muxSeen(Seat{Session: "w1", Pane: "p1"}, err); ok {
+		t.Errorf("the occupant arm fired on a herdr failure and answered %+v — on herdr State IS that same `agent explain`", det)
 	}
 }

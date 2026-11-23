@@ -1,6 +1,6 @@
 # ADR 0076 — the multiplexer slot is the client, not the backend: ten verbs, herdr and Rex behind them, and on Rex the runtime reports its own state
 
-*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh` · corrected 2026-11-10 (ranger-base-nfc2b): a Rex block is addressed WITHIN its session, so §2's table's `-b` is incomplete and the occupant resolves a pane-only `Seat` itself, see "Correction: a Rex block is addressed within its session" below · amended 2026-11-10 (ranger-base-r5131): a reading whose only consequence is to WITHHOLD one may be taken off the screen on either occupant — "no screen rules on Rex" is about state, see "Amendment 5" below · amended 2026-11-10 (ranger-base-qzujz): a §4 verb that names a fact the RUNTIME owns may be answered on another occupant by asking the runtime — the conversation id is in claude's own per-session store, joined on the pid that holds the block, see "Amendment 6" below · amended 2026-11-10 (ranger-base-hlnyx): a screen reading may REFUSE a keystroke and still may not license one — a prompt into a claude block with no composer on its screen is refused, because the dialog eats the prompt and the Enter actuates its highlighted row, see "Amendment 7" below · amended 2026-11-11 (ranger-base-xdaw9): the same refusal on herdr's typed route, measured — `pane report-agent` overrides the label without blinding the detection, so that route types into a live claude, and the tell is the screen and not herdr's composer region, see "Amendment 8" below · amended 2026-11-15 (ranger-base-ybrk6, ADR 0080's exec amendment): a launch confirmation's FAILED read can be positive evidence — rex's own `not found` for this seat's target says the runtime ENDED, which the dispatched arm refuses instead of keeping, see "Amendment 10" below · amended 2026-11-23 (ranger-base-hcig1): a `Wait` that runs its window out may CARRY the last reading the occupant held — on the error, never in the result — because the one caller that has to decide on that refusal cannot parse a state out of a sentence, see "Amendment 11" below · amended 2026-11-23 (ranger-base-25otk): a `Wait` RESULT that is settled and carries `Seen` is the settle gate's own evidence (ADR 0013 §1's settle row, §3's declared field) and the gate returns on it — the first reading of this family that may produce a positive, and it still does not license the keystroke, which Amendment 7's and Amendment 9's refusals guard at the delivery verb, see "Amendment 12" below*
+*Status: accepted 2026-10-31 (ranger-base-lcxr3, operator direction 2026-10-24) · owner: architect · applies ADR 0075 §2 (the slot rule) to its first slot · probe: `docs/adr/0076-multiplexer-slot.probe.sh` · spike ranger-base-ch2rb: `docs/adr/0076-hook-route.probe.sh`, see "Spike" below · amended 2026-10-31 (ranger-base-zkeik): §3 admission is decided before the claim and confirmed by the delivery mode; codex and grok stay refused, see "Amendment" below · probe: `docs/adr/0076-argv-admission.probe.sh` · amended 2026-11-06 (ranger-base-dok0a, ADR 0080 D3): codex is admitted on Rex through hooks and trust typed on its launch line; grok and bob stay refused pending their spikes, see "Amendment 2" below · probes: `docs/adr/0076-flag-trust.probe.sh` (the design), `docs/adr/0076-reporter.probe.sh` (the reporter slice, ranger-base-z7kle), `docs/adr/0076-trust-ask.probe.sh` (the trust-ask slice, ranger-base-fwwl8), `docs/adr/0076-reporter.probe.sh` arm `tty` (the admission slice's darwin measurement, ranger-base-8gh58) · amended 2026-11-06 (ranger-base-1vgrw): grok is admitted on Rex by its own report once the operator's grok config sets `program_status = "on"`; D3's `grokon` arm never set it, and grok's hooks cannot reach the tty, see "Amendment 3" below · probe: `docs/adr/0076-grok-hook.probe.sh` · amended 2026-11-06 (ranger-base-778y0): bob is herdr-only on Rex, because `chat` takes no argv prompt and no record exists before a typed one, see "Amendment 4" below · probe: `docs/adr/0076-bob-argv.probe.sh` · corrected 2026-11-10 (ranger-base-nfc2b): a Rex block is addressed WITHIN its session, so §2's table's `-b` is incomplete and the occupant resolves a pane-only `Seat` itself, see "Correction: a Rex block is addressed within its session" below · amended 2026-11-10 (ranger-base-r5131): a reading whose only consequence is to WITHHOLD one may be taken off the screen on either occupant — "no screen rules on Rex" is about state, see "Amendment 5" below · amended 2026-11-10 (ranger-base-qzujz): a §4 verb that names a fact the RUNTIME owns may be answered on another occupant by asking the runtime — the conversation id is in claude's own per-session store, joined on the pid that holds the block, see "Amendment 6" below · amended 2026-11-10 (ranger-base-hlnyx): a screen reading may REFUSE a keystroke and still may not license one — a prompt into a claude block with no composer on its screen is refused, because the dialog eats the prompt and the Enter actuates its highlighted row, see "Amendment 7" below · amended 2026-11-11 (ranger-base-xdaw9): the same refusal on herdr's typed route, measured — `pane report-agent` overrides the label without blinding the detection, so that route types into a live claude, and the tell is the screen and not herdr's composer region, see "Amendment 8" below · amended 2026-11-15 (ranger-base-ybrk6, ADR 0080's exec amendment): a launch confirmation's FAILED read can be positive evidence — rex's own `not found` for this seat's target says the runtime ENDED, which the dispatched arm refuses instead of keeping, see "Amendment 10" below · amended 2026-11-23 (ranger-base-hcig1): a `Wait` that runs its window out may CARRY the last reading the occupant held — on the error, never in the result — because the one caller that has to decide on that refusal cannot parse a state out of a sentence, see "Amendment 11" below · amended 2026-11-23 (ranger-base-25otk): a `Wait` RESULT that is settled and carries `Seen` is the settle gate's own evidence (ADR 0013 §1's settle row, §3's declared field) and the gate returns on it — the first reading of this family that may produce a positive, and it still does not license the keystroke, which Amendment 7's and Amendment 9's refusals guard at the delivery verb, see "Amendment 12" below · amended 2026-11-23 (ranger-base-q5fee): `State` is one of §2's ten verbs and not a §4 one, so the readiness gate and the delivered wait ask the occupant where §4's reading is not available and open on the evidence alone — their own rule, which is about the keyboard and not about a state — while the concession, the grace and every refusal stay exactly where they were, see "Amendment 13" below*
 
 ## Context
 
@@ -2628,3 +2628,165 @@ one.
   could read `Mux().State`, which is not a §4 verb — and MEASURED
   2026-11-23: nothing outside muxrex.go calls that verb at all. Filed as
   ranger-base-q5fee.
+
+## Amendment 13: `State` is not a §4 verb, so the other two ladders ask it (ranger-base-q5fee, 2026-11-23)
+
+Amendment 12 gave the settle gate the occupant's own `Wait` reading and
+left its own residual behind, in those words: two other ladders take §4's
+concession and neither has been given a reading at all. This amendment is
+that residual, and the verb it turns on is one §2 already has.
+
+`Mux().State` is one of §2's ten verbs — "the occupant's reading of the
+runtime in this seat, taken now" — so every occupant answers it,
+including one with no `agent explain`. MEASURED 2026-11-23 (UTC;
+2026-11-22 -05:00 local) on the HEAD that landed Amendment 12: nothing
+outside `internal/posse/muxrex.go` called it at all. The verb existed;
+no ladder read it.
+
+### What broke
+
+MEASURED 2026-11-23 over the live fleet's two dispatch pass logs
+(`state/dispatch-watch.log` and `.log.1`, 66,766 lines, the earliest
+`== dispatch --watch armed ==` line 2026-11-10 18:53:28 — hcig1's and
+25otk's census re-read on a log 290 lines longer):
+
+| shape | n |
+| --- | --- |
+| `prompting without the readiness gate` — `AwaitPromptable`'s concession | **518** |
+| of those, printed by the PULSE | **518** |
+| `the work prompt is on its launch line; gathering anyway` — `awaitDelivered`'s concession | **0** |
+| `prompting on its … anyway` — the settle ladder's, Amendment 12's subject | 862 |
+
+**The readiness gate.** On a §4-missing instance every poll errors, so
+the gate concedes after `promptExplainGrace` and returns the ZERO
+detection — no state, `Seen()` false. All 518 of those are the pulse, and
+the pulse's own rule is written over that detection:
+`det.Seen() && !pulseTakesPrompt(det.State)`, which is what keeps a shop
+check off a persona mid-turn (ranger-base-k99a). On this instance that
+rule has never once been able to fire. What saved the box is the cheap
+pre-filter one line above it — the session listing, which on Rex is
+evidence-backed (`RexMux.List` drops a block with no `Seen`) — so the
+visibly-working seats were skipped. What was missing is the RE-READ at
+the instant of typing, which is the entire reason this gate is a second
+reader: "`agent wait` and `agent explain` read the same detection at two
+different instants, and the second one wins."
+
+**The delivered wait.** 0 on this instance: no `prompt: argv` runtime has
+launched here, so this half is a shape closed before it is paid rather
+than a cost already counted. It is said as zero rather than left out,
+because a reader comparing the two sites deserves to know which one the
+box has exercised. What it loses when it does run is the OBSERVATION —
+`launched.unseen`, which decides whether the bead is judged this pass. A
+`true` that came from "the diagnostic could not be taken" is not the same
+fact as a `true` the occupant reported.
+
+### Why this is Amendment 12's licence and not a wider one
+
+**Same field, same kind of verb.** Amendment 12's argument was that
+`MuxReading.Seen` off `Wait` "is not a reading posse composes… §2's own
+verb answering with §3's own field." `State` is the same sentence: on Rex
+`Wait` *is* `State` polled until a deadline (§2's own Wait row), so this
+spends no evidence a settle gate may not already spend. D2's "the RESULT
+and never the refusal" is satisfied trivially — `State` has no
+refusal-that-carries-a-reading shape; an error is an error.
+
+**The missing state half is the other gate's own rule, not a loosening.**
+Amendment 12's D1 insists on both halves, and arm 1 of its pins keeps the
+settle gate from opening on `working`. The readiness gate asks a
+different question and has said so since it was written: it waits for a
+screen herdr has SEEN "and NOT for a particular state", because the
+operator prompting by hand may be nudging an agent mid-turn, and "a
+working pane herdr recognizes is a pane whose CLI has the keyboard, which
+is the only question this bug asks." `awaitDelivered` asks the same
+question of the same field — its `det.Seen()` arm takes any state too,
+because detectability is what says the launch line ran.
+
+**It still licenses no keystroke, and here that sentence has a second
+half: the refusal that would be new is already somewhere else.** A
+reading with no evidence is not read as "no" — unknown is never no (ADR
+0013 §1) — so both concessions stand and both sites still proceed. What
+stops the keystroke when nothing holds that keyboard is the delivery
+verb, where Amendment 7's and Amendment 9's refusals live: "on a rex
+instance this verb's own refusals ARE the gate" (`refuseAtDeadOwner`,
+`refuseWithoutComposer`), and `posse prompt`'s own call site already says
+so of `--now`. This amendment adds a positive arm and invents no
+negative.
+
+### Decision
+
+**D1. Where a §4 reading is NOT AVAILABLE, the occupant is asked
+`Mux().State`, and a reading that carries `Seen` opens the gate — at the
+readiness gate and at the delivered wait, on the evidence alone.** One
+predicate, one home: `muxSeenGate` (internal/posse/muxsettle.go), which
+is also the evidence half `muxSettledGate` now reads, so the two gates
+cannot drift about what evidence is. The state rides into the detection
+unexamined; a gate that cares about it asks for it itself, and neither of
+these two does.
+
+**D2. The evidence rides in `AgentDetection.MuxSeen`, Amendment 12's own
+field, set in that one file and nowhere else.** D4 of Amendment 12 stands
+with its subject widened from one function to one file, pinned the same
+way (`muxsettle_qa_test.go` arm 6, an ast walk over the package's non-test
+sources). The readiness gate's reading is handed to callers, so the field
+is what lets the pulse's rule see what opened the gate.
+
+**D3. The door is §4's "not available" and never "the explain failed",
+and that is the whole blast radius.** `HerdrMux.State` IS `agent explain`
+flattened — the same call, the same answer — so on herdr this read would
+be a retry of the call that just failed at the same instant: no second
+reading, one more subprocess per poll, and the fake herdr's
+`explain-error-after N` / `explain-error-for N` countdowns, which count
+CALLS, silently off by one. §4's door answers "unavailable" only where the
+slot holds something that is not herdr, so herdr reaches the read not at
+all. Pinned as a call that is never made (arm 8) and as a door herdr's own
+failures never open (arm 9).
+
+**D4. An error from the occupant's own verb is ignorance, and the
+caller's concession is what it always was.** Every other reader of this
+verb already reads it that way (`AwaitFirstReport`'s three outcomes,
+`RexMux.Wait`'s "an error ends the wait rather than being retried"). No
+window is lengthened and no grace is moved: the readiness gate still
+concedes at `promptExplainGrace` when nothing answered, and the delivered
+wait still gathers.
+
+**D5. The note a gate reports says which reading opened it.** `waitedFor`
+and `seenBy` (promptready.go) get the occupant's arm, because their
+existing last branch describes a REPORTED pane and would have rendered
+"reported for agent \"\" (herdr detects no such kind)" over a reading
+that is neither.
+
+### Consequences
+
+- The pulse's "do not nudge a persona mid-turn" rule can fire on a
+  §4-missing instance for the first time, and the hand prompt's gate
+  stops conceding on a seat whose runtime is reporting. 518 concessions
+  in the measured window become reads of the occupant's own record.
+- **Both concessions become unreachable on the real Rex occupant, each for
+  its own reason.** With evidence, the new arm takes it. Without, the
+  readiness gate still reaches its concession — a record the block's own
+  shell wrote is a reading Rex can answer — but `awaitDelivered` cannot:
+  `RexMux.List` drops a block with no `Seen`, so `awaitTarget` fails
+  first and there is no target to concede over. `muxnoverb_qa_test.go`'s
+  arms are split for that: 3b drives the concession on the real occupant,
+  5b needs the stand-in that answers §2's verbs with a state and nothing
+  else — the same occupant 4b uses, and for the same argument.
+- The readiness gate's accept costs one `State` call per poll on a
+  §4-missing occupant and nothing on herdr. On Rex that is two rex calls
+  (`program_status`, then the process table), and on an established
+  session it is one poll: the record is there, so the gate returns before
+  its first sleep. Pinned as "inside `promptExplainGrace`" rather than as
+  a wall-clock figure (arm 3a).
+- `awaitDelivered`'s accept returns silently, like its `det.Seen()` arm:
+  a reading that answered is not news, and an observation that succeeded
+  is not one of ADR 0066 D1's consequences.
+- Amendment 12's D5 is widened, not weakened: nothing moves on herdr at
+  any of the three ladders, and at these two the reason is stronger than
+  at the first — not "the field is false by design" but "the door never
+  opens".
+- Nothing here gives either site a REFUSAL on a no-evidence reading. On a
+  Rex instance a hand prompt into a seat whose runtime has ended still
+  passes this gate and is refused at the delivery verb instead. Whether
+  the gate should refuse it earlier, and in what words, is left open on
+  purpose: it would be new behaviour on the operator's own path, the
+  sentence would have to be written for an occupant that is not herdr,
+  and no reading on this box has been shown to need it.
