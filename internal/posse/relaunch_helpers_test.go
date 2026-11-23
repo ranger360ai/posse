@@ -30,6 +30,13 @@ func hermeticGen(t *testing.T) {
 
 // devSession writes a PID whose gates the wall fully realizes on claude at
 // shims, plus an env set, and creates one session from them.
+//
+// The root is gitTempDir and not t.TempDir, which is a tolerant cleanup and
+// nothing else (ranger-base-i65lw): a caller that `git init`s the dir this
+// returns needs one, and TestQAEveryGitInitInThePosseTestsSitsOnATolerantRoot
+// is what asks for it. It is a strict widening for every other caller —
+// gitTempDir registers a retrying RemoveAll that runs BEFORE TempDir's own,
+// so a dir it clears leaves TempDir nothing to fail over.
 func devSession(t *testing.T, b *HerdrBackend, name string) string {
 	t.Helper()
 	os.MkdirAll(b.App.AgentsDir, 0o755)
@@ -37,7 +44,7 @@ func devSession(t *testing.T, b *HerdrBackend, name string) string {
 		[]byte("---\nname: dev\ndeny: [Bash(git push:*)]\n---\nYou are dev.\n"), 0o644)
 	os.MkdirAll(b.App.EnvsDir, 0o700)
 	os.WriteFile(filepath.Join(b.App.EnvsDir, "test.env"), []byte("FOO=bar\n"), 0o600)
-	repo := t.TempDir()
+	repo := gitTempDir(t)
 	if err := b.CreateSession(NewSessionOpts{
 		Name: name, Agent: "dev", Dir: repo, Envs: []string{"test"}, Tier: "standard",
 	}); err != nil {
