@@ -53,6 +53,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-8ck6d](ranger-base-8ck6d.md) — ranger-base-8ck6d: the last four member lines that deferred their cause — 2026-11-22
 - [ranger-base-8752f](ranger-base-8752f.md) — Three arms of the wall-member censuses, each priced before it was widened (ranger-base-8752f) — 2026-11-22
 - [ranger-base-7mfnf](ranger-base-7mfnf.md) — The re-plant hazard cannot reach a `#!` script, so 361 call sites are not exposed (ranger-base-7mfnf) — 2026-11-22
+- [ranger-base-72z36](ranger-base-72z36.md) — ranger-base-72z36 — three wall-member accounts reached the bead with 0 to 3 characters, and the fix is three argument swaps — 2026-11-22
 - [ranger-base-6r6ox](ranger-base-6r6ox.md) — A kill that did not confirm no longer reports KILLED, and a fixture finally drives it (ranger-base-6r6ox) — 2026-11-22
 - [ranger-base-6felj](ranger-base-6felj.md) — A verdict file's reading is its LAST word on the kill (ranger-base-6felj) — 2026-11-22
 - [ranger-base-5pkix](ranger-base-5pkix.md) — Four code findings from ranger-base-j7ekm's verify (ranger-base-5pkix) — 2026-11-22

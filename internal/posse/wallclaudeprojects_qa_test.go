@@ -424,7 +424,25 @@ func TestLiveWallClaudeProjectsRefusesPeerPlants(t *testing.T) {
 	t.Logf("claude -p under the rendered wall (%s): %s", bin, bgSeatAccount(cerr, outBuf.String()))
 	afterOwn, _ := filepath.Glob(filepath.Join(own, "*.jsonl"))
 	if len(afterOwn) <= len(beforeOwn) {
-		t.Errorf("the real claude wrote no transcript in its own key dir %s under the rendered wall: %s", own, bgSeatAccount(cerr, outBuf.String()))
+		// AND THE ACCOUNT GOES FIRST, the shape the sibling 90s branch above
+		// and wallclaudeprojectsattack_qa_test.go's own Fatalf already have
+		// (ranger-base-mklu0, ranger-base-72z36). The key dir was interpolated
+		// in FRONT of it, and that path is the widest thing this fixture has:
+		// the fixture root, plus claude's own key-dir mangling of the session
+		// dir, which spells that root a second time inside one directory name.
+		// MEASURED 2026-11-22 on this box by rendering this row's format
+		// string and arguments as a t.Logf and slicing in runes as
+		// `scripts/posse-wall-check`'s evidence() does: 374 characters
+		// rendered, the account's own verb starting at 254 of the 300, 46 of a
+		// 120-character account arriving, and a 139-character key dir paying
+		// for it. 46 characters of headroom is not a budget — the root is
+		// spelled twice in that dir, so a root 23 characters wider than this
+		// run's puts the account's verb itself past the slice and the bead
+		// gets nothing at all. With the account first the offset is 115 and
+		// the dir costs it nothing, whatever the root: the dir is context a
+		// reader can re-derive and it keeps line 2, where ADR 0097 D3 says
+		// supporting prose costs nothing.
+		t.Errorf("the real claude wrote no transcript in its own key dir under the rendered wall: %s\nkey dir %s — the dir this pin reads, which is the fixture's and not the finding", bgSeatAccount(cerr, outBuf.String()), own)
 	}
 	for p, b := range before {
 		if got, err := os.ReadFile(p); err != nil || string(got) != string(b) {

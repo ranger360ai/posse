@@ -386,7 +386,21 @@ func TestLiveWallClaudeProjectsANonOwnCwdRunsTheRealClaudeAndWritesNoTranscript(
 			t.Fatalf("claude -p under the wall did not end in 90s; it said %s\ncwd %s — D3 assumes an unwritable transcript dir is survivable, and a seat that hangs is the failure that assumption rules out", said, cwd)
 		}
 		if runErr != nil {
-			t.Logf("claude -p under the wall for cwd %s ended badly, which this pin does not assert on — it reads the projects/ tree, not the exit — but a reader of a red below needs it: %s", cwd, bgSeatAccount(runErr, outBuf.String()))
+			// AND THE ACCOUNT GOES FIRST HERE TOO, which it did not
+			// (ranger-base-72z36): the Fatalf one arm up had the order
+			// ranger-base-mklu0 landed and this line, four lines below it,
+			// kept the cwd in front. MEASURED 2026-11-22 on this box, by
+			// rendering this row's format string and arguments as a t.Logf
+			// and slicing in runes as evidence() does, over the two cwds this
+			// runner is called with: 372 characters with the account's verb
+			// at 252 of the 300, and 406 with it at 286 — so 48 and 14 of a
+			// 120-character account arrived, and a 33-character silence
+			// account loses 19 of its 33 on the second. With the account
+			// first the offset is 79 for BOTH cwds, which is the point: the
+			// cwd no longer buys the account's place. The cwd and the D3
+			// reasoning keep line 2, where D3 says supporting prose costs
+			// nothing.
+			t.Logf("claude -p under the wall ended badly: %s\ncwd %s — which this pin does not assert on: it reads the projects/ tree, not the exit, but a reader of a red below needs it", bgSeatAccount(runErr, outBuf.String()), cwd)
 		}
 		return strings.TrimSpace(outBuf.String())
 	}

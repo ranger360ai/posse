@@ -454,10 +454,36 @@ func bgSeatAbstain(t *testing.T, what string, err error, out string) {
 // NOTHING MEASURED line are two answers waiting to disagree about what ADR
 // 0097 D3's exit 3 says. The account is the caller's; the sentence is this
 // function's, and there is one of it.
+//
+// THE ACCOUNT GOES FIRST, AND `what` FOLLOWS IT (ranger-base-72z36). It did
+// not, and `what` is the one term of this line whose width is a CALLER's:
+// many of the abstention sites build it from a joined argv, a whole shell
+// script or a fixture cwd, so the preamble this function charged its own
+// account was unbounded. `scripts/posse-wall-check`'s evidence() carries the
+// first `file.go:NN:` line truncated to 300 characters with go test's own
+// prefix INSIDE the 300 (ADR 0097 D3), and the skip branch spends that same
+// 300 — its docstring says one rule for a failure line and a skip line.
+//
+// MEASURED 2026-11-22 on this box (linux 7.2.15-1-omarchy, go1.27.3,
+// bubblewrap 0.13.1) by rendering this line unconditionally as a t.Logf over
+// the 42 abstentions of the five TestLiveBwrapSeatStore tests and slicing in
+// runes as evidence() does. With `what` first: the account's own verb started
+// at 196 to 592 characters, 19 of 42 reached the bead with NOTHING, 22
+// arrived cut mid-account, and 27 could not have fitted a 33-character
+// silence account — the worst, 592, from bwrapseatstorelive_test.go:475. With
+// the account first: a FIXED 50 — go test's 32-character prefix for this
+// file's basename plus `NOTHING MEASURED: `'s 18 — at all 42, every silence
+// account whole, and the only two renders still truncated are ones whose own
+// account is 261 and 334 characters of what the seat said — 250 of each
+// arrives, and no order fits the rest inside 300. What the account costs is
+// now a caller's line NUMBER and nothing else, because `what` is behind the
+// account rather than in front of it. Arm 2 of
+// internal/treepins/wallmemberaccount_qa_test.go stays green: the account is
+// still before the first newline, there being none.
 func bgSeatAbstainAccount(t *testing.T, what, account string) {
 	t.Helper()
 	t.Skipf("NOTHING MEASURED: %s — %s. Nothing in this run read the wall: the seat was ended by a signal from outside the sandbox before it could answer, so this is ADR 0097 D3's exit 3 and neither a wall red nor a pass (ranger-base-evx07)",
-		what, account)
+		account, what)
 }
 
 // bgSeatAbstainIfOutside is THE ROUTING DOOR, and it is one line of code
