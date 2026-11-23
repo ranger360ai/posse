@@ -4549,13 +4549,20 @@ func (b *HerdrBackend) killAndLand(name string, opts KillOpts) (*KillLanding, er
 		if w == nil {
 			w = io.Discard
 		}
-		settled, err := b.landThePlane(w, m, timeout, KillLandingPrompt(m), "closing anyway")
+		settled, refusal, err := b.landThePlane(w, m, timeout, KillLandingPrompt(m), "closing anyway")
 		if err != nil {
 			return nil, err
 		}
 		if !settled {
-			return nil, Die("NOT killed: %s is still working after %s — let it finish and kill it again (or --timeout %s, or --no-land to close it without the turn)",
-				name, timeout, (2 * timeout).String())
+			// The evidence under the sentence (landrefusal.go,
+			// ranger-base-4yefx): the reading this refusal was taken on,
+			// what the pane is holding, and — the clause only a kill can
+			// add — whether a kill would take anything, which is what makes
+			// `--no-land` a decision rather than a guess. MEASURED
+			// 2026-11-23: this sentence without them cost two refusals and
+			// 30 minutes on a seat whose turn had ended ~41h earlier.
+			return nil, Die("NOT killed: %s is still working after %s — let it finish and kill it again (or --timeout %s, or --no-land to close it without the turn)%s",
+				name, timeout, (2 * timeout).String(), landRefusalTail(b.landRefusalKillLines(m, refusal)))
 		}
 	}
 

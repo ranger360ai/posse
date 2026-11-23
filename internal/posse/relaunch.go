@@ -174,13 +174,18 @@ func (b *HerdrBackend) RelaunchSession(w io.Writer, o RelaunchOpts) error {
 	}
 
 	if !o.NoLand {
-		settled, err := b.landThePlane(w, m, timeout, LandingPrompt(m), "relaunching anyway")
+		settled, refusal, err := b.landThePlane(w, m, timeout, LandingPrompt(m), "relaunching anyway")
 		if err != nil {
 			return err
 		}
 		if !settled {
-			return Die("%s is still working after %s — let it finish and relaunch again (or --timeout %s, or --no-land to close it anyway)",
-				o.Name, timeout, (2 * timeout).String())
+			// The evidence under the sentence, one clause per line
+			// (landrefusal.go, ranger-base-4yefx). A relaunch gets the
+			// reading and the hold and not the kill's residue clause: this
+			// path recreates the session, so what a close would TAKE is not
+			// the question in front of the operator.
+			return Die("%s is still working after %s — let it finish and relaunch again (or --timeout %s, or --no-land to close it anyway)%s",
+				o.Name, timeout, (2 * timeout).String(), landRefusalTail(refusal.Lines()))
 		}
 	}
 
@@ -804,11 +809,11 @@ func RecoverCommand(m *HerdrMeta) string {
 //
 // Everything else about the turn — the settle wait, the bound, the blocked
 // arm, the give-up note itself — is the same mechanism and stays here.
-func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Duration, prompt, next string) (bool, error) {
+func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Duration, prompt, next string) (bool, landRefusal, error) {
 	target, err := b.AgentTarget(m.Name)
 	if err != nil {
 		fmt.Fprintf(w, "no agent in %s — nothing to land\n", m.Name)
-		return true, nil
+		return true, landRefusal{}, nil
 	}
 	deadline := time.Now().Add(timeout)
 	remaining := func() int {
@@ -826,17 +831,23 @@ func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Dura
 	res, err := b.Mux().Wait(target, []string{"idle", "done", "blocked"}, remaining())
 	if err != nil {
 		if IsHerdrCode(err, "timeout") {
-			return false, nil
+			// The refusal's own evidence, read here and said by the caller
+			// (landrefusal.go, ranger-base-4yefx): the reading this Wait
+			// held when its window closed, and what the pane is holding.
+			// Both were available at this line and both were thrown away
+			// with the error, which is what left `posse kill` recommending
+			// two more waits over a seat whose turn had already ended.
+			return false, b.landRefusalOf(m, landStageSettle, err), nil
 		}
-		return false, err
+		return false, landRefusal{}, err
 	}
 	switch res.State {
 	case "idle", "done":
 	case "blocked":
 		fmt.Fprintf(w, "%s is blocked awaiting input — skipping the landing turn\n", m.Name)
-		return true, nil
+		return true, landRefusal{}, nil
 	default:
-		return false, nil
+		return false, b.landRefusalRead(m, landStageSettle, res), nil
 	}
 
 	// No PromptMode() check here, unlike dispatch.go's and herdrback.go's
@@ -862,7 +873,11 @@ func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Dura
 	fmt.Fprintf(w, "landing %s (up to %s)…\n", m.Name, timeout)
 	if _, err := b.Mux().Prompt(target, prompt, true, remaining()); err != nil {
 		if IsHerdrCode(err, "timeout") {
-			return false, nil // the turn is running; that claim is about the wait, not the prompt
+			// The turn is running; that claim is about the wait, not the
+			// prompt — and the stage says so, because "the landing prompt
+			// was typed and its turn has not ended" is a different fact
+			// from "nothing was ever typed" (ranger-base-4yefx).
+			return false, b.landRefusalOf(m, landStagePrompt, err), nil
 		}
 		// agent_prompt_stalled is not a landing that failed to be submitted
 		// — it is an UNOBSERVED turn, and putting it on the other side of
@@ -890,7 +905,7 @@ func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Dura
 		// 10m0s — or --timeout 20m0s" would be printed within five seconds
 		// of the prompt. --no-land is the override that is real.
 		if IsHerdrCode(err, "agent_prompt_stalled") {
-			return false, Die("%s was NOT closed: it took the landing prompt but herdr saw no turn start inside its own 5s window (%v).\n"+
+			return false, landRefusal{}, Die("%s was NOT closed: it took the landing prompt but herdr saw no turn start inside its own 5s window (%v).\n"+
 				"  the text WAS typed, so the landing turn may be starting — a slow start is the common case under load, and closing now would discard it.\n"+
 				"  give it a moment and try again, or --no-land to close it without the landing turn", m.Name, err)
 		}
@@ -902,7 +917,7 @@ func (b *HerdrBackend) landThePlane(w io.Writer, m *HerdrMeta, timeout time.Dura
 		// opposite things.
 		fmt.Fprintf(w, "landing prompt failed (%v) — %s\n", err, next)
 	}
-	return true, nil
+	return true, landRefusal{}, nil
 }
 
 // LandingPrompt is what a session hears before it is closed. It names no
