@@ -26,6 +26,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-q41e8](ranger-base-q41e8.md) — ranger-base-q41e8 — the prefix arm 6 charges, and the file `go test` will print — 2026-11-22
 - [ranger-base-og2zi](ranger-base-og2zi.md) — Suite slots: a bounded queue, and a holder named by the kernel (ranger-base-og2zi) — 2026-11-22
 - [ranger-base-oe884](ranger-base-oe884.md) — The one line over a set of verdicts says what they say (ranger-base-oe884) — 2026-11-22
+- [ranger-base-nqtz5](ranger-base-nqtz5.md) — ranger-base-nqtz5 — two G19 pins, and why one of them had to read source — 2026-11-22
 - [ranger-base-njj5z](ranger-base-njj5z.md) — A read deadline is a poller fact, and a FIFO is not pollable on darwin (ranger-base-njj5z) — 2026-11-22
 - [ranger-base-momix](ranger-base-momix.md) — ranger-base-momix — the account census refused the shape the house prescribes, and graded 3 of 24 files — 2026-11-22
 - [ranger-base-mlw6q](ranger-base-mlw6q.md) — ranger-base-mlw6q — the wallWitness home, and the two layers under it — 2026-11-22
