@@ -252,6 +252,39 @@ func bgLiveSessionGrants(t *testing.T, repo, tree string, ag *AgentFile) []strin
 // wwOneLine answers a wordless bwrap in wall-watch's own terms, and here a
 // seat that said nothing means something else, so each caller keeps its own
 // account of silence and shares the fold.
+//
+// WHAT THE TAIL MAY NOT BE: REASONING. This function's return value is spent
+// out of the SAME 300 characters as its caller's whole message, and until
+// ranger-base-dxaxt its silence tail was a fixed 199-character literal — the
+// single largest consumer in the class, larger than any member message's
+// preamble, and one function. MEASURED 2026-11-22 (this box, go1.27.3, tip
+// 3ef2d977): at that tail the derived budget for a whole message was 95
+// characters and 28 of the member set's 65 account messages spent it before
+// the account started, among them every `CONTROL:` message whose preamble is
+// the complete claim ADR 0097 D3 wants on line 1. ranger-base-uu303 carries
+// that reading and docs/notes.d/ranger-base-dxaxt.md carries this landing.
+//
+// What went was the clause "so that status is the whole account: no error
+// from the command and no bwrap refusal, which is the shape of a seat ended
+// from outside rather than one the wall turned away", and two things make it
+// the right 172 characters to take:
+//
+//   - IT IS SAID WHERE IT IS TRUE. Silence plus a supervisor's signal is
+//     routed to ADR 0097 D3's abstention now (bgSeatAbstainIfOutside), and
+//     bgSeatAbstainAccount's own sentence carries the ended-from-outside
+//     reading. The tail was saying it a second time on the one path where it
+//     holds.
+//   - AND IT CONTRADICTED THE STATUS IN FRONT OF IT ON EVERY OTHER PATH. What
+//     still reaches a bead carrying this account as a RED is a status the
+//     house reads as the wall's or git's own answer — `exit status 128` at
+//     `cannot lock ref`, SIGSYS's 159 — and "no error from the command" read
+//     directly after `exit status 128` was wrong, not merely redundant.
+//
+// The budget is now PINNED rather than advised: internal/treepins'
+// wallmemberaccount_qa_test.go arm 6 reads this literal's width out of this
+// source and requires `prefix + preamble + the silence account <= 300` of
+// every member message, so a tail that grows again shrinks every member's
+// budget by exactly what it grew and reds with the messages it cut.
 func bgSeatAccount(err error, out string) string {
 	status := "exit 0"
 	if err != nil {
@@ -261,17 +294,28 @@ func bgSeatAccount(err error, out string) string {
 	}
 	// strings.Fields, which is wwOneLine's own emptiness test, so "said
 	// nothing" means the same thing at both ends of the fold.
+	//
+	// THE TAIL IS THE EVIDENCE AND STOPS THERE (ranger-base-dxaxt). The status
+	// and the silence ARE the finding; see this function's "WHAT THE TAIL MAY
+	// NOT BE" above for the 199 characters of reasoning that used to follow
+	// them and why they are gone.
 	if len(strings.Fields(out)) == 0 {
-		return status + ", and the seat said NOTHING — so that status is the whole account: no error from the command and no bwrap refusal, which is the shape of a seat ended from outside rather than one the wall turned away"
+		return status + ", and the seat said NOTHING"
 	}
 	return status + ", and the seat said " + wwOneLine(out)
 }
 
 // bgSeatEndedFromOutside reads the ONE signature ranger-base-evx07 measured,
 // and it is the half of bgSeatAccount's sentence that had nowhere to go: that
-// account already NAMES "the shape of a seat ended from outside rather than
-// one the wall turned away", and then every caller turned it into a FAIL
-// anyway. A member FAIL is ADR 0097 D3's exit 1, which D5's ratchet files as
+// account used to NAME "the shape of a seat ended from outside rather than one
+// the wall turned away" and then every caller turned it into a FAIL anyway.
+// This function is where that reading went, and taking the clause out of the
+// account was the other half of the same move (ranger-base-dxaxt): the
+// criterion is here, the sentence a reader gets for it is
+// bgSeatAbstainAccount's, and the account carries the status and the silence —
+// the evidence, and nothing it is evidence FOR.
+//
+// A member FAIL is ADR 0097 D3's exit 1, which D5's ratchet files as
 // one P1 `-l code` attributed to the newest landing's persona — so a seat the
 // box killed arrives as a wall regression charged to whoever landed last.
 // This class has done that four times (ranger-base-a688i, -w6kke, -axt1f,
