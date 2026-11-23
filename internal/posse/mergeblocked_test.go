@@ -1482,6 +1482,19 @@ func TestMergeBlockedReplayPutsHeadOnTheCurrentBaseFirstAndChecksItLast(t *testi
 		"git reset --keep main",
 		"git rev-list --reverse main..$T",
 		"do not leave\nHEAD off your branch",
+		// ranger-base-uc3ng: the citation at the foot of this copy is the only
+		// MEASURED account of the loop, and both fragments it names carry a
+		// recipe block written before this pin existed — neither names
+		// `merge --ff-only` or `is-ancestor` anywhere (MEASURED 2026-11-23, by
+		// grep over both, main d13842d4). A seat that reads the citation as
+		// the authority gets the procedure that lands nowhere, so the citation
+		// says what it is citing FOR and names the steps its fragments lack.
+		// The edge — the fragments' own CONTENT, which no pin in this package
+		// can reach — is
+		// internal/treepins/mergeblockedrunbook_qa_test.go's
+		// TestMergeBlockedRunbookCitationNamesTheStepsItsFragmentsLack.
+		"CITED FOR THE LOOP ONLY",
+		"`git merge --ff-only` or `git merge-base --is-ancestor`",
 	} {
 		if !strings.Contains(got, w) {
 			t.Errorf("the recipe does not say %q:\n%s", w, got)
@@ -1507,8 +1520,10 @@ func TestMergeBlockedReplayPutsHeadOnTheCurrentBaseFirstAndChecksItLast(t *testi
 	// And the arm with no operands: it can give no loop, but "your HEAD is
 	// your launch base" is a fact about every dispatched seat and not about
 	// this filing's sha, so it carries the rule and the same one command.
+	// "CITED FOR THE LOOP ONLY" is here too: the citation is in both arms, and
+	// so are the fragments it sends a seat to (ranger-base-uc3ng).
 	none := mergeBlockedReplay("main", "", 2)
-	for _, w := range []string{"YOUR HEAD IS YOUR LAUNCH BASE", "git merge --ff-only main"} {
+	for _, w := range []string{"YOUR HEAD IS YOUR LAUNCH BASE", "git merge --ff-only main", "CITED FOR THE LOOP ONLY"} {
 		if !strings.Contains(none, w) {
 			t.Errorf("a filing with no head drops %q:\n%s", w, none)
 		}

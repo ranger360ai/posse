@@ -7245,6 +7245,28 @@ func mergeBlockedBody(persona, id, base string, t *SessionTree, o MergeOutcome, 
 // no sequencer state, and is REFUSED once the seat has committed on the stale
 // base — which is why the refusal is given a meaning and a way round.
 //
+// AND THE LAST LINE SENDS THE SEAT TO TWO COPIES OF THE PRE-GHTOV RECIPE
+// (ranger-base-uc3ng). The citation at the foot of this copy is the only
+// MEASURED account of the loop, so a reader takes it as the authority — and
+// both fragments carry their own recipe block written before the paragraph
+// above existed. MEASURED 2026-11-23, main d13842d4, by grep over both:
+// docs/notes.d/ranger-base-4r8fw.md's "## The recipe, per commit" reads HEAD
+// in three commands (:52, :53, :68) and docs/notes.d/ranger-base-xea2y.md is
+// the single-commit worked example with `merge-tree --write-tree` at :13;
+// NEITHER names `merge --ff-only` or `is-ancestor` anywhere. So a seat that
+// follows the citation gets the replay ghtov measured landing nowhere, by
+// obeying the text — the same shape ranger-base-4r8fw's own paragraph above
+// warns about one layer up.
+//
+// The fragments are not edited: a docs/notes.d/<bead>.md fragment is that
+// bead's record. The CITATION says what it is citing FOR instead, and names
+// the two steps its fragments cannot give. That is one claim in two copies,
+// so the edge is pinned where it can read the second:
+// internal/treepins/mergeblockedrunbook_qa_test.go reads the fragments' own
+// content and reds when a cited copy of the recipe lacks a head step the
+// citation does not name — which is also what lets a later bead fix it the
+// other way, by putting the steps in the fragment.
+//
 // NO SHA, NO OPERANDS. The commands need the pinned commit, and a filing that
 // could not read a head has none — mergeBlockedShelfLife's third arm is what
 // tells that seat so. The warning stands in both arms: it is about a tool,
@@ -7266,8 +7288,18 @@ func mergeBlockedReplay(base, sha string, commits int) string {
 	// seat, not about this filing's operands. One spelling, so the arm with
 	// no loop cannot name a different command from the arm with one.
 	ffFirst := "`git merge --ff-only " + base + "` FIRST"
+	// CITED FOR THE LOOP ONLY (ranger-base-uc3ng). Both fragments carry a
+	// pre-ghtov copy of this recipe, so the citation that sends a seat to them
+	// has to say what they are measured FOR and name the steps they lack. One
+	// spelling for both arms, for the same reason ffFirst has one.
 	const runbooks = "docs/notes.d/ranger-base-xea2y.md is the worked example and\n" +
-		"docs/notes.d/ranger-base-4r8fw.md the per-commit loop, both MEASURED."
+		"docs/notes.d/ranger-base-4r8fw.md the per-commit loop, both MEASURED — and\n" +
+		"CITED FOR THE LOOP ONLY. Both PREDATE the head: neither fragment names\n" +
+		"`git merge --ff-only` or `git merge-base --is-ancestor`, and 4r8fw's own\n" +
+		"recipe block reads HEAD throughout. Those two are THIS copy's, and they are\n" +
+		"what makes a faithful replay land — take the loop from the fragments and the\n" +
+		"head from here, or you write the replay they describe: faithful, pairing,\n" +
+		"read-back empty, landed nowhere."
 	if sha == "" {
 		return warn + "Nothing here needs one: `git merge-tree --write-tree " + base + " <the\n" +
 			"work>` merges in the object store and `git cat-file blob` takes the merged\n" +

@@ -8,6 +8,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 
 ## 2026-11
 
+- [ranger-base-uc3ng](ranger-base-uc3ng.md) — ranger-base-uc3ng — the merge-back block's citation sent the seat to a pre-fix copy of its own recipe — 2026-11-23
 - [ranger-base-q5fee](ranger-base-q5fee.md) — ranger-base-q5fee — the other two ladders, and a §2 verb nothing called — 2026-11-23
 - [ranger-base-p51zu](ranger-base-p51zu.md) — ranger-base-p51zu — a seat with no work prompt is a fact the records already held — 2026-11-23
 - [ranger-base-hcig1](ranger-base-hcig1.md) — ranger-base-hcig1 — the settle window's two exits, and what the illegible one cost — 2026-11-23
