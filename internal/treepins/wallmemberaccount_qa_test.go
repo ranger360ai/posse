@@ -93,11 +93,15 @@ package treepins
 // (storerepogitwalllive_test.go), byte-identical copies of the two runners
 // ranger-base-axt1f fixed — and 19 messages reading their accounts after a
 // newline. All of those are fixed in the landing that adds this file.
-// RE-MEASURED 2026-11-22 (same box, go1.27.3) with the widened key: 24 member
-// files, 32 launching functions, 31 of them handing a literal `bwrap` argv
-// entry and 2 taking the wrapper route (one does both), 33 child errors
-// graded. The +1 over the argv-entry reading is grokleader_qa_test.go's
-// function, which this census could not see at all before.
+// RE-MEASURED 2026-11-22 (same box, go1.27.3) with the widened key, at the tip
+// that widened it: 24 member files, 32 launching functions, 31 of them handing
+// a literal `bwrap` argv entry and 2 taking the wrapper route (one does both),
+// 33 child errors graded. The +1 over the argv-entry reading is
+// grokleader_qa_test.go's function, which this census could not see at all
+// before. RE-READ at 814776ed (ranger-base-yem73): 24 files, 33 launching
+// functions, 32 argv-entry, the same 2 wrapper reads and 40 child errors
+// graded — the key is unchanged and the member set grew, which is why arm 1's
+// floors are floors and the count a reader wants is the one its Logf prints.
 //
 // THE LINE RULE IS POSITIONAL, AND THE ACCOUNT KEY READS THE FOLD
 // (ranger-base-momix, from ranger-base-0b6zo's verify of ranger-base-mklu0).
