@@ -421,7 +421,22 @@ func TestLiveWallClaudeProjectsRefusesPeerPlants(t *testing.T) {
 	// landed in — but a reader of the red below needs to know whether the
 	// seat answered at all, and `scripts/posse-wall-check` carries one line
 	// to the bead (ADR 0097 D3, ranger-base-axt1f).
-	t.Logf("claude -p under the rendered wall (%s): %s", bin, bgSeatAccount(cerr, outBuf.String()))
+	//
+	// AND THE ACCOUNT GOES FIRST HERE, which is where ranger-base-72z36's row
+	// 2 belonged (ranger-base-zpagn F4). That fix swapped the Errorf below,
+	// and `evidence()` never reads it for this member: it returns the FIRST
+	// non-marker `file.go:NN:` line of the output, the Errorf is inside `if
+	// len(afterOwn) <= len(beforeOwn)`, and THIS Logf is unconditional and
+	// above it. So the line the bead's P1 actually carries was the one line
+	// of the pair nobody had swapped. MEASURED 2026-11-23 on this box by
+	// running the member (`-count=1 -v`, 1.29s, PASS) and slicing its output
+	// in runes as evidence() does: 252 characters rendered with the account's
+	// verb at 132 of the 300, 61 of those 132 the interpolated `bin` — the
+	// same dependency on a path's width that row 2's own fix was written to
+	// remove, and the whole of what it buys is that the account's place is a
+	// prefix plus a literal this file controls. The binary keeps line 2,
+	// where ADR 0097 D3 says supporting prose costs nothing.
+	t.Logf("claude -p under the rendered wall: %s\nbin %s — the binary the fixture ran, which a reader can re-derive", bgSeatAccount(cerr, outBuf.String()), bin)
 	afterOwn, _ := filepath.Glob(filepath.Join(own, "*.jsonl"))
 	if len(afterOwn) <= len(beforeOwn) {
 		// AND THE ACCOUNT GOES FIRST, the shape the sibling 90s branch above

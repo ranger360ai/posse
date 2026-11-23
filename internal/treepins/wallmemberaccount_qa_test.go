@@ -1865,6 +1865,34 @@ func TestQAEveryWallMemberSeatLaunchRendersItsChildsError(t *testing.T) {
 		len(files), launchers, argvEntry, len(wrapped), graded, wrapped)
 }
 
+// wmaDeferredRoster is the per-file floor arm 2 holds on the messages that
+// render their account in front of a newline — the shape ADR 0097 D3
+// prescribes and three beads have now had to install. One row per member file
+// that carries the shape, with how many of its messages do.
+//
+// The number is a FLOOR and the paths are the whole deferred set as it stands
+// (7 messages in 3 files, MEASURED 2026-11-23). A new message of this shape
+// lands without touching this table; an unswap cannot.
+var wmaDeferredRoster = []struct {
+	file string
+	n    int
+	why  string
+}{
+	{
+		file: "internal/posse/wallclaudeprojects_qa_test.go", n: 2,
+		why: "ranger-base-72z36's row 2, the Errorf behind the transcript test, and ranger-base-zpagn's F4, " +
+			"the unconditional Logf above it — which is the line evidence() actually reads for this member",
+	},
+	{
+		file: "internal/posse/wallclaudeprojectsattack_qa_test.go", n: 2,
+		why: "ranger-base-mklu0's 90s Fatalf and ranger-base-72z36's row 3, the ended-badly Logf four lines below it",
+	},
+	{
+		file: "internal/posse/wallunixlive_test.go", n: 3,
+		why: "ranger-base-momix's three, the reading that found this arm grading a narrower set than it claimed",
+	},
+}
+
 // ARM 2 — THE LINE. A message carrying a seat's account carries it where the
 // bead will read it. This is ranger-base-a688i's half, scoped to the one
 // value that cannot be recovered after the fact.
@@ -1905,6 +1933,10 @@ func TestQAEveryWallMemberMessageCarriesItsSeatAccountOnTheFirstLine(t *testing.
 	// GREEN today because of the verb that renders it. A count alone could
 	// not be checked against the set.
 	var unfolded []string
+	// And the deferred set keyed by FILE (ranger-base-zpagn F5), for
+	// wmaDeferredRoster below: the list above witnesses the RULE, and this
+	// one holds each file's own swaps in place.
+	deferredIn := map[string][]string{}
 	routes := map[string]int{}
 	for _, f := range files {
 		msgs := wmaAccountMessages(f)
@@ -1950,7 +1982,9 @@ func TestQAEveryWallMemberMessageCarriesItsSeatAccountOnTheFirstLine(t *testing.
 				if strings.ContainsAny(m.text, "\n\r") {
 					// The shape the rule before this one refused, and the
 					// reason the floor below exists.
-					deferred = append(deferred, fmt.Sprintf("%s:%d", m.file, m.line))
+					at := fmt.Sprintf("%s:%d", m.file, m.line)
+					deferred = append(deferred, at)
+					deferredIn[m.file] = append(deferredIn[m.file], at)
 				}
 			}
 		}
@@ -1999,7 +2033,43 @@ func TestQAEveryWallMemberMessageCarriesItsSeatAccountOnTheFirstLine(t *testing.
 		t.Errorf("this arm read %d message(s) rendering the seat's unfolded words in front of an account, want at least 1 (1 on 2026-11-23: internal/posse/bwrapseatstorelive_test.go:506, bsLive.in's raw `out` under a `%%q` — the one row in the member set that renders unfolded words before its account, and escaped is why it passes). That is what witnesses this arm reading a newline that arrives inside an argument rather than in the format text; with none of them in the tree, nothing here says wmaUnfoldedLocals reaches the member set and arm 3's planted rows are the whole of it.", len(unfolded))
 	}
 	if len(deferred) == 0 {
-		t.Errorf("this arm read %d account message(s) that defer their prose to a second line, want at least 1 (6 at 814776ed on 2026-11-22: wallclaudeprojects_qa_test.go:445, wallclaudeprojectsattack_qa_test.go:386 and :403, and wallunixlive_test.go:237, :526 and :1130 — four of them ranger-base-momix's reading at e5221de6, the other two ranger-base-72z36's, and the line numbers are this tip's and not a promise about yours: the Logf below lists whatever the tree holds now). Those are what distinguish this arm's rule from `no newline at all`; with none of them in the tree, nothing here witnesses that the rule is positional and arm 3's planted rows are the whole of it.", len(deferred))
+		t.Errorf("this arm read %d account message(s) that defer their prose to a second line, want at least 1 (7 on 2026-11-23: wallclaudeprojects_qa_test.go:439 and :460, wallclaudeprojectsattack_qa_test.go:386 and :403, and wallunixlive_test.go:237, :526 and :1130 — four of them ranger-base-momix's reading at e5221de6, two ranger-base-72z36's and one ranger-base-zpagn's, and the line numbers are this tip's and not a promise about yours: the Logf below lists whatever the tree holds now). Those are what distinguish this arm's rule from `no newline at all`; with none of them in the tree, nothing here witnesses that the rule is positional and arm 3's planted rows are the whole of it.", len(deferred))
+	}
+	// AND THE SWAPS THEMSELVES ARE HELD, PER FILE (ranger-base-zpagn F5).
+	// The floor above witnesses the RULE; it does not witness the work. Three
+	// beads have now moved an account in front of a newline in this member
+	// set, and MEASURED 2026-11-23 — all three of ranger-base-72z36's rows
+	// reverted to their pre-fix blobs — every arm of this file stayed GREEN,
+	// `make treepins-check` stayed green, the three members themselves stayed
+	// green, and so did `make fmt-check`. Arm 6 counts an interpolated verb as
+	// ZERO by design, so the ORDER of the arguments is outside what it can
+	// see, and the floor above only asks that SOME message defers: the
+	// deferred count went 7 to 5 and nothing read it. So the next editor who
+	// finds one of these sentences awkward puts it back with every door green,
+	// and three beads' work is undone.
+	//
+	// KEYED ON THE FILE AND A COUNT, not on a line and not on the prose. A
+	// line number goes stale at the next landing that moves one — twice
+	// already, which is why the floor above stopped naming them — and a copy
+	// of the message text here would red on a reword, which is ordinary work.
+	// The file plus how many of its messages carry the shape is stable under
+	// both and still names the row: a revert takes a file's count down, and
+	// the failure prints that file's live entries beside the number.
+	//
+	// A ROW THAT STOPS HAPPENING IS FINE TO DELETE AND NOT TO LEAVE, the
+	// register patternkill_qa_test.go's `wantExempt` uses: if a member is
+	// retired or two of its messages are folded into one, lower the number
+	// here and say which bead did it. What this refuses is the silent
+	// unswap.
+	for _, want := range wmaDeferredRoster {
+		if got := deferredIn[want.file]; len(got) < want.n {
+			t.Errorf("%s renders %d account message(s) with the account in front of a newline, want at least %d (%s) — "+
+				"an account that was moved to the front of its line has been moved back behind one, which is the one "+
+				"change to these messages no other arm of this file can see (ranger-base-zpagn F5). The live entries "+
+				"for this file are %v; if a message really has gone from the tree, lower the number in "+
+				"wmaDeferredRoster and name the bead that took it out.",
+				want.file, len(got), want.n, want.why, got)
+		}
 	}
 	t.Logf("%d member file(s), %d of them carrying a seat account, %d account message(s) read (%d by a runner local, %d by a folded local, %d by an inline fold, %d by a parameter), %d of which defer prose to a second line with the account in front of it: %v; %d render the seat's unfolded words in front of the account: %v",
 		len(files), withAccounts, read, routes["runner local"], routes["folded local"], routes["inline fold"], routes["parameter"], len(deferred), deferred, len(unfolded), unfolded)
