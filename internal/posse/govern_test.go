@@ -2427,3 +2427,87 @@ func TestGovG19CrewAndBeadlessSeatsRaiseNothing(t *testing.T) {
 		}
 	}
 }
+
+// THE PREDICATE'S OWN EXCLUSIONS, GRADED WITH NO WALK IN FRONT OF THEM
+// (ranger-base-56gd0, verifying ranger-base-p51zu's close).
+//
+// The four pins above all reach G19 through ShopCheck, and ShopCheck's walk
+// pre-filters the SAME three populations one line before it calls the
+// predicate (govern.go, "ONE FILE READ PER CANDIDATE"). So the rule is
+// written twice and those pins grade the composite: MEASURED 2026-11-23,
+// deleting unpromptedSeat's own `case s.Foreign, s.Crew:` and
+// `case s.Bead == "":` arms left the whole G19 family GREEN, and so did
+// deleting the walk's pre-filter. Either copy could go and nothing would
+// say so.
+//
+// This is the predicate alone, which is the claim unpromptedSeat's docstring
+// makes about itself ("it is the predicate alone, which is what makes it the
+// same answer twice"). It grades the walk's copy not at all — that one is a
+// cost guard whose subject is how many files a pass opens, and witnessing it
+// needs a read counter the fixtures here do not have. Said rather than
+// implied: the finding that the walk's copy is still unwitnessed is
+// ranger-base-nqtz5.
+//
+// THE POSITIVE CASE IS IN THE TABLE for the reason every exclusion arm needs
+// one: three rows that all answer false are three rows a predicate hardwired
+// to `return false` would pass.
+// SERIAL, by cmd/testparallel's own refusal and its own remedy: this test
+// names a written package var (govNow), so the tool will not clear a
+// t.Parallel here and `make treepins-check` reds on one. Nothing is lost —
+// every row below is one call to a pure predicate over hand-built values and
+// the whole test is 0.00s.
+func TestGovG19ThePredicateItselfExcludesEachPopulation(t *testing.T) {
+	old := govNow.Add(-20 * time.Minute)
+	for _, tc := range []struct {
+		name string
+		s    HerdrSession
+		want bool
+	}{
+		{"a dispatched per-bead seat with no stamp", HerdrSession{Name: "p-x", Agent: "p", Bead: "bd-1"}, true},
+		{"the operator's own session (ADR 0008)", HerdrSession{Name: "p-x", Agent: "p", Bead: "bd-1", Crew: true}, false},
+		{"a session posse did not create", HerdrSession{Name: "p-x", Agent: "p", Bead: "bd-1", Foreign: true}, false},
+		{"a session nobody aimed at a bead", HerdrSession{Name: "p-x", Agent: "p"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, got := unpromptedSeat(tc.s, &HerdrMeta{Name: "p-x", Launched: old}, govNow)
+			if got != tc.want {
+				t.Fatalf("unpromptedSeat = %v, want %v (condition %+v)", got, tc.want, c)
+			}
+			if !got {
+				// An excluded seat must raise NOTHING, not a blank row: the
+				// walk hands whatever comes back to `add`.
+				if c != (GovCondition{}) {
+					t.Errorf("excluded and still carrying a row: %+v", c)
+				}
+				return
+			}
+			if c.ID != "G19" || c.Class != GovLane || c.Key != "unprompted:p-x" {
+				t.Errorf("row = %+v, want G19/LANE/unprompted:p-x", c)
+			}
+		})
+	}
+}
+
+// The other two exclusions the predicate owns and the walk does not, so
+// these are the arms nothing else can reach at all: a record posse cannot
+// read, and a record with no launch clock to age (unprompted.go's own two
+// abstentions).
+// Serial for the reason one test up, and the same cost: nothing.
+func TestGovG19ThePredicateAbstainsOnARecordItCannotAge(t *testing.T) {
+	s := HerdrSession{Name: "p-x", Agent: "p", Bead: "bd-1"}
+	old := govNow.Add(-20 * time.Minute)
+	for _, tc := range []struct {
+		name string
+		m    *HerdrMeta
+	}{
+		{"no record at all", nil},
+		{"a record posse could not parse", &HerdrMeta{Name: "p-x", Launched: old, Unreadable: true}},
+		{"a record with no launch stamp", &HerdrMeta{Name: "p-x"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if c, got := unpromptedSeat(s, tc.m, govNow); got {
+				t.Errorf("a record this row cannot age raised one anyway: %+v", c)
+			}
+		})
+	}
+}
