@@ -7222,6 +7222,29 @@ func mergeBlockedBody(persona, id, base string, t *SessionTree, o MergeOutcome, 
 // fixture, TestMergeBackPairsEveryCommitOfATwoCommitBranchReplayedOneByOne —
 // which is the claim a prose-only fix could not make.
 //
+// AND IT READS HEAD, WHICH IS THE SEAT'S LAUNCH BASE AND NOT THE CURRENT ONE
+// (ranger-base-ghtov). The text said "In YOUR tree, on <base>:" and then every
+// command in the loop read `HEAD` — but a dispatched seat's HEAD is where the
+// base stood when it was LAUNCHED (AGENTS.md, "Landing the plane"), nothing
+// moves it when the base moves, and the prescribed read-back compares two key
+// lists that are both computed from that same stale pair. So a replay written
+// after a sibling lands is faithful in every way the pairing can measure,
+// reads back EMPTY, and lands nowhere: the landing is `merge --ff-only`, which
+// needs the base to be an ANCESTOR of the commit. MEASURED 2026-11-22 under
+// ranger-base-56gd0: the replay 1c9a6f26 was written 29 minutes after its base
+// 7dc3313e stopped being main, its (author email, AUTHOR date, subject) were
+// byte-identical to the original's, the read-back was empty, and
+// `git merge-tree --merge-base=1c9a6f26^ main 1c9a6f26` still conflicted — the
+// launcher re-filed the same block as ranger-base-zr2mf.
+//
+// So the recipe opens with `git merge --ff-only <base>` and closes with
+// `git merge-base --is-ancestor <base> HEAD`: the keys are an identity, never
+// a position, and the position is the half nothing was asking for. MEASURED
+// 2026-11-22, git 2.56.0, linux: the fast-forward moves a session worktree's
+// HEAD (attached or detached) with the base branch checked out elsewhere, adds
+// no sequencer state, and is REFUSED once the seat has committed on the stale
+// base — which is why the refusal is given a meaning and a way round.
+//
 // NO SHA, NO OPERANDS. The commands need the pinned commit, and a filing that
 // could not read a head has none — mergeBlockedShelfLife's third arm is what
 // tells that seat so. The warning stands in both arms: it is about a tool,
@@ -7238,6 +7261,11 @@ func mergeBlockedReplay(base, sha string, commits int) string {
 	// operands, and a seat that has to find its own head still has to produce
 	// one commit per commit it finds.
 	const perOriginal = "ONE REPLAY COMMIT PER ORIGINAL"
+	// THE FAST-FORWARD IS SAID IN BOTH ARMS TOO, and for the same reason: a
+	// HEAD that is the seat's launch base is a fact about every dispatched
+	// seat, not about this filing's operands. One spelling, so the arm with
+	// no loop cannot name a different command from the arm with one.
+	ffFirst := "`git merge --ff-only " + base + "` FIRST"
 	const runbooks = "docs/notes.d/ranger-base-xea2y.md is the worked example and\n" +
 		"docs/notes.d/ranger-base-4r8fw.md the per-commit loop, both MEASURED."
 	if sha == "" {
@@ -7246,7 +7274,10 @@ func mergeBlockedReplay(base, sha string, commits int) string {
 			"blobs back out — no sequencer state, nothing to leak. This filing has no sha\n" +
 			"to put in that command, so the reason above is what there is. " + perOriginal + "\n" +
 			"once you have one, however many there turn out to be: a squash pairs with one\n" +
-			"of them and strands the rest, and this block re-files forever.\n" + runbooks
+			"of them and strands the rest, and this block re-files forever.\n" +
+			"And " + ffFirst + ", whatever head you find:\n" +
+			"YOUR HEAD IS YOUR LAUNCH BASE, not " + base + " as it stands now, and a replay on\n" +
+			"a stale base pairs, reads back clean and lands nowhere.\n" + runbooks
 	}
 	// The count the body's own first sentence prints, said again where the
 	// loop is: one number in this text, so the recipe cannot disagree with
@@ -7272,7 +7303,15 @@ func mergeBlockedReplay(base, sha string, commits int) string {
 		"exactly one original is paired while the rest are stranded — the block then\n" +
 		"re-files on every later pass forever, with the work sitting on " + base + ".\n" +
 		"\n" +
-		"In YOUR tree, on " + base + ":\n" +
+		"In YOUR tree, and " + ffFirst + " — BECAUSE YOUR HEAD IS YOUR LAUNCH BASE.\n" +
+		"Every command below reads HEAD, and nothing moved yours when " + base + " moved. A\n" +
+		"replay written on the base you launched at is faithful, pairs, reads back clean\n" +
+		"and lands NOWHERE — the landing is `merge --ff-only`, so " + base + " has to be an\n" +
+		"ANCESTOR of what you commit. The fast-forward writes no commit and no sequencer\n" +
+		"state, and works with " + base + " checked out in another tree:\n" +
+		"  git merge --ff-only " + base + "\n" +
+		"  git rev-parse " + base + " HEAD   # the same sha twice, before you start\n" +
+		"Then, on " + base + ":\n" +
 		"  # the originals, OLDEST FIRST — replay them in this order, one commit each:\n" +
 		"  git rev-list --reverse " + base + ".." + sha + "\n" +
 		"For each original C in that order. The merge base is C's OWN PARENT, which\n" +
@@ -7297,6 +7336,18 @@ func mergeBlockedReplay(base, sha string, commits int) string {
 		"commit, and the block that re-files does not say which:\n" +
 		"  diff <(git log --format='%ae%x1f%aI%x1f%s' " + base + ".." + sha + " | sort) \\\n" +
 		"       <(git log --format='%ae%x1f%aI%x1f%s' " + base + "..HEAD | sort)\n" +
+		"THOSE KEYS ARE AN IDENTITY AND NOT A POSITION, and " + base + " can move while you\n" +
+		"work: that diff is empty either way, so ask git where your work actually sits,\n" +
+		"last thing before you stop:\n" +
+		"  git merge-base --is-ancestor " + base + " HEAD   # exit 0, or it lands nowhere\n" +
+		"Nonzero means " + base + " moved under you. Do not rebase, and do not leave\n" +
+		"HEAD off your branch — a HEAD holding work the branch does not blocks the\n" +
+		"landing by itself. Go round once more, keeping your tip readable:\n" +
+		"  T=$(git rev-parse HEAD)   # your replay so far, kept by this sha\n" +
+		"  git reset --keep " + base + "   # HEAD, and your branch, onto the current base\n" +
+		"  git rev-list --reverse " + base + "..$T   # your own commits are now the originals\n" +
+		"and run the loop above over those: they already carry the originals' keys, so\n" +
+		"the set that pairs is the same one.\n" +
 		runbooks
 }
 

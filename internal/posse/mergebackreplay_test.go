@@ -424,6 +424,186 @@ func TestMergeBackPairsEveryCommitOfATwoCommitBranchReplayedOneByOne(t *testing.
 	}
 }
 
+// ranger-base-ghtov: the SECOND way a faithful replay lands nowhere, and the
+// honest half of
+// TestMergeBlockedReplayPutsHeadOnTheCurrentBaseFirstAndChecksItLast.
+//
+// The recipe's every command reads `HEAD`, and a dispatched seat's HEAD is
+// where the base stood when it was LAUNCHED (AGENTS.md, "Landing the plane").
+// Nothing moved it when the base moved and nothing asked whether the base had,
+// so a seat launched before a sibling lands resolves each conflict against a
+// base that no longer exists. The replay is faithful in every way the pairing
+// can measure — (author email, AUTHOR date, subject) byte-identical, which is
+// the only arm a hand-resolved replay leaves — and the prescribed read-back
+// comes back EMPTY, because both of its sides are key lists computed from that
+// same stale pair. MEASURED under ranger-base-56gd0: the replay 1c9a6f26 was
+// written 29 minutes after its base 7dc3313e stopped being main, the close's
+// own read-back was empty and said nothing, and the launcher re-filed the same
+// block as ranger-base-zr2mf.
+//
+// So this runs the recipe TWICE over the same blocked branch, in two seat trees
+// launched at the same base, with the base moving under both of them
+// afterwards:
+//
+//   - as it was written, reading HEAD. The read-back is empty, and the work
+//     lands nowhere — the launcher's own filter refuses it and the pass reports
+//     a block, which is what re-files.
+//   - with the step the copy now opens with, `git merge --ff-only <base>`.
+//     Same originals, same keys, same loop — and it lands, after which the
+//     stranded branch is accounted for and the block does not re-file.
+//
+// The key read-back is asserted EMPTY on both, because that is the whole
+// finding: the step a seat was told to stop on cannot tell the two apart, and
+// `git merge-base --is-ancestor <base> HEAD` can.
+func TestMergeBackReplayOnAStaleLaunchBaseLandsNowhereAndTheFastForwardFixesIt(t *testing.T) {
+	t.Parallel()
+	a := wtApp(t)
+	repo := wtRepo(t)
+	commitIn(t, repo, "shared.mk", "PHONY := build test\n", "seed the makefile")
+
+	// The stranded branch, and the sibling in the same line that blocks it.
+	tr, err := a.EnsureSessionTree(repo, "s-1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const subj, date = "the stranded half (ranger-base-ghtov)", "2026-11-22T19:07:14-05:00"
+	commitAtIn(t, tr.Path, "shared.mk", "PHONY := build test a\n", subj, date)
+	commitIn(t, repo, "shared.mk", "PHONY := build test verify-x\n", "a sibling bead")
+
+	// The two replay seats, LAUNCHED HERE: each HEAD is the base as it stands
+	// at this moment, which is the whole fixture. Both, because the stale run
+	// below must not be the thing that makes the fixed run different.
+	stale, err := a.EnsureSessionTree(repo, "s-2", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixed, err := a.EnsureSessionTree(repo, "s-3", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launch := mustGit(t, repo, "rev-parse", "main")
+	for _, s := range []*SessionTree{stale, fixed} {
+		if h := mustGit(t, s.Path, "rev-parse", "HEAD"); h != launch {
+			t.Fatalf("fixture: %s launched with HEAD at %s, want the base's %s — there is no staleness to measure", s.Branch, h, launch)
+		}
+	}
+
+	// And the base moves again, after both seats are launched. Nothing in
+	// either tree moved with it.
+	commitIn(t, repo, "shared.mk", "PHONY := build test verify-x verify-y\n", "a second sibling bead")
+	if o, err := MergeSessionWork(a, tr); err != nil {
+		t.Fatal(err)
+	} else if !o.Blocked() {
+		t.Fatalf("fixture: the branch has to be blocked or there is nothing for the recipe to replay: %+v", o)
+	}
+
+	// The recipe's per-original loop, run in one seat's tree against whatever
+	// its HEAD is — which is the parameter this test varies and the only one.
+	replay := func(seat *SessionTree, resolution string) {
+		t.Helper()
+		originals := strings.Fields(mustGit(t, repo, "rev-list", "--reverse", "main.."+tr.Branch))
+		if len(originals) != 1 {
+			t.Fatalf("fixture: %d original(s) to replay, want 1", len(originals))
+		}
+		for _, c := range originals {
+			// merge-tree exits NONZERO on a conflict and writes the tree
+			// anyway, which is the case this recipe is for.
+			out, _ := git(seat.Path, "merge-tree", "--write-tree", "--merge-base="+c+"^", "HEAD", c)
+			fields := strings.Fields(out)
+			if len(fields) == 0 {
+				t.Fatalf("%s: merge-tree wrote no tree:\n%s", seat.Branch, out)
+			}
+			tree := fields[0]
+			if del := mustGit(t, seat.Path, "diff", "--diff-filter=D", "--name-only", "HEAD", tree); del != "" {
+				t.Fatalf("%s: the merged tree deletes %q", seat.Branch, del)
+			}
+			for _, p := range strings.Fields(mustGit(t, seat.Path, "diff", "--name-only", c+"^", c)) {
+				b, err := gitRaw(seat.Path, "cat-file", "blob", tree+":"+p)
+				if err != nil {
+					t.Fatalf("%s: %s out of the merged tree: %v", seat.Branch, p, err)
+				}
+				write(t, filepath.Join(seat.Path, p), string(b))
+				// Both seats must be resolving a REAL conflict, or the replay
+				// is a patch-id twin and `git cherry` would pair it without
+				// replayKey — the arm this whole class turns on.
+				if !strings.Contains(string(b), "<<<<<<<") {
+					t.Fatalf("%s: %s came out of the merge clean, so the fixture measures the patch-id arm:\n%s", seat.Branch, p, b)
+				}
+			}
+			commitAtIn(t, seat.Path, "shared.mk", resolution,
+				mustGit(t, seat.Path, "log", "-1", "--format=%s", c),
+				mustGit(t, seat.Path, "log", "-1", "--format=%aI", c))
+		}
+	}
+	// The recipe's own read-back, both sides of it.
+	keys := func(dir, rng string) string {
+		t.Helper()
+		return mustGit(t, dir, "log", "--format=%ae%x1f%aI%x1f%s", rng)
+	}
+
+	// ---- the recipe as it was written: HEAD, and HEAD is the launch base.
+	replay(stale, "PHONY := build test verify-x a\n")
+	if l, r := keys(repo, "main.."+tr.Branch), keys(stale.Path, "main..HEAD"); l != r {
+		t.Fatalf("the prescribed read-back is NOT empty over a stale replay, so this test measures something else:\nleft  %q\nright %q", l, r)
+	}
+	if _, err := git(stale.Path, "merge-base", "--is-ancestor", "main", "HEAD"); err == nil {
+		t.Error("the base is an ancestor of a replay written on the launch base — the fixture did not go stale")
+	}
+	staleTip := mustGit(t, stale.Path, "rev-parse", "HEAD")
+	if mergesCleanly(repo, "main", staleTip) {
+		t.Error("the launcher's own filter calls the stale replay landable; the block below would not re-file and there is no bug")
+	}
+	if o, err := MergeSessionWork(a, stale); err != nil {
+		t.Fatal(err)
+	} else if !o.Blocked() {
+		t.Errorf("a replay written on a stale launch base was landed: %+v", o)
+	}
+	if h := mustGit(t, repo, "rev-parse", "main"); strings.Contains(keys(repo, h+"~1.."+h), subj) {
+		t.Error("the base took the stale replay after all")
+	}
+
+	// ---- and with the step the copy now opens with.
+	if _, err := git(fixed.Path, "merge", "--ff-only", "main"); err != nil {
+		t.Fatalf("the prescribed fast-forward was refused in a clean seat tree with the base checked out elsewhere: %v", err)
+	}
+	if h, m := mustGit(t, fixed.Path, "rev-parse", "HEAD"), mustGit(t, repo, "rev-parse", "main"); h != m {
+		t.Fatalf("the fast-forward left HEAD at %s, want the base's %s", h, m)
+	}
+	replay(fixed, "PHONY := build test verify-x verify-y a\n")
+	// The read-back says exactly what it said about the stale replay — which
+	// is why it is not the step that decides anything here.
+	if l, r := keys(repo, "main.."+tr.Branch), keys(fixed.Path, "main..HEAD"); l != r {
+		t.Errorf("the read-back is not empty over a correct replay:\nleft  %q\nright %q", l, r)
+	}
+	if _, err := git(fixed.Path, "merge-base", "--is-ancestor", "main", "HEAD"); err != nil {
+		t.Fatalf("the base is not an ancestor of a replay made after the fast-forward (%v) — the step the copy prescribes does not do what it says", err)
+	}
+	o, err := MergeSessionWork(a, fixed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Blocked() || !o.Merged {
+		t.Fatalf("the replay the recipe now prescribes did not land: %+v", o)
+	}
+	// THE CLAIM: the stranded branch is accounted for on the base, so the
+	// block does not re-file — which is what the stale run could not buy at
+	// any price.
+	eq := equivalentOnBase(repo, "main", tr.Branch)
+	if len(eq) != 1 {
+		t.Fatalf("the stranded commit is accounted for %d time(s), want 1: %+v", len(eq), eq)
+	}
+	if !eq[0].replayed || eq[0].byPatch {
+		t.Errorf("the pairing must be marked a replay and never a measurement of content: %+v", eq[0])
+	}
+	if o, err := MergeSessionWork(a, tr); err != nil {
+		t.Fatal(err)
+	} else if o.Blocked() {
+		t.Errorf("the block re-files over work the replay put on the base: %q", o.Reason)
+	} else if !o.Merged {
+		t.Errorf("the pass does not say the base holds the stranded work: %+v", o)
+	}
+}
+
 // commitAtIn is commitIn with the AUTHOR date pinned — the one field a
 // rebase carries through a replay unchanged, and therefore the only way to
 // build a replay fixture that is not just two commits made a second apart.

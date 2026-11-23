@@ -1360,6 +1360,18 @@ func TestMergeBlockedReplayNamesTheCountAndThePerCommitLoop(t *testing.T) {
 	// the whole SET of keys.
 	perCommit := []string{
 		"ONE REPLAY COMMIT PER ORIGINAL",
+		// ranger-base-ghtov: the step that has to come BEFORE the walk. Every
+		// command in this loop reads HEAD, and a dispatched seat's HEAD is
+		// its LAUNCH base — so without this the whole recipe is correct
+		// against a base that no longer exists.
+		//
+		// Both pinned as the COMMAND and not as the words: the copy names
+		// `git merge --ff-only <base>` in its prose too, so a bare substring
+		// is green over a recipe that lost the line a seat actually runs
+		// (MEASURED 2026-11-22 by deleting it — every pin in this file stayed
+		// green until the indentation went into the literal).
+		"\n  git merge --ff-only main\n",
+		"\n  git merge-base --is-ancestor main HEAD",
 		"git rev-list --reverse main.." + sha,
 		"--merge-base=$C^ HEAD $C",
 		"git diff --name-only $C^ $C",
@@ -1422,6 +1434,84 @@ func TestMergeBlockedReplayNamesTheCountAndThePerCommitLoop(t *testing.T) {
 	// loop: the rule is about equivalentOnBase, not about this filing's sha.
 	if got := mergeBlockedReplay("main", "", 2); !strings.Contains(got, "ONE REPLAY COMMIT PER ORIGINAL") {
 		t.Errorf("a filing with no head drops the one-commit-per-original rule:\n%s", got)
+	}
+}
+
+// ranger-base-ghtov: the recipe reads HEAD, and a dispatched seat's HEAD is
+// the base as it stood at its LAUNCH.
+//
+// Nothing in the copy moved it onto the current base and nothing told the seat
+// to check that the base had not moved, so a seat launched before a sibling
+// lands resolved every conflict against a base that no longer existed. The
+// replay was faithful — equivalentOnBase pairs it — and the prescribed
+// read-back came back EMPTY, because both of its sides are key lists computed
+// from that same stale pair. The seat closed honestly and the block re-filed
+// with the work off the base (MEASURED under ranger-base-56gd0: replay
+// 1c9a6f26 on 7dc3313e, written 29 minutes after main had moved on four
+// commits; the launcher re-filed it as ranger-base-zr2mf).
+//
+// The honest half of this is
+// TestMergeBackReplayOnAStaleLaunchBaseLandsNowhereAndTheFastForwardFixesIt,
+// which replays a blocked branch in a seat tree whose HEAD is a stale base and
+// measures both outcomes. This is the cheap half, and it is here because a
+// seat reads the TEXT — in the ORDER it is written, which is why the positions
+// are asserted and not only the presence.
+func TestMergeBlockedReplayPutsHeadOnTheCurrentBaseFirstAndChecksItLast(t *testing.T) {
+	t.Parallel()
+	const sha = "a1e32986d8e56fa33aa18b1c7748b01b97591124"
+	got := mergeBlockedReplay("main", sha, 2)
+
+	// The reason, which is the half a seat cannot derive from the commands:
+	// nothing about `HEAD` says it is stale, and the seat that met this read
+	// the recipe correctly.
+	for _, w := range []string{
+		"YOUR HEAD IS YOUR LAUNCH BASE",
+		// The commands, with the indentation that makes them commands: the
+		// copy says `git merge --ff-only <base>` in prose as well, and a pin
+		// on the bare words was green over a recipe with the runnable line
+		// deleted (MEASURED 2026-11-22).
+		"\n  git merge --ff-only main\n",
+		"\n  git rev-parse main HEAD",
+		"\n  git merge-base --is-ancestor main HEAD",
+		// The recovery: the fast-forward is REFUSED once the seat has
+		// committed on the stale base (MEASURED 2026-11-22, git 2.56.0), so a
+		// refusal that named no way round would stop the seat where it stands
+		// — and the two shapes it must not reach for are a rebase, which this
+		// file's scanner already guards, and a detached HEAD, which blocks
+		// the landing on its own (attachForReplay).
+		"git reset --keep main",
+		"git rev-list --reverse main..$T",
+		"do not leave\nHEAD off your branch",
+	} {
+		if !strings.Contains(got, w) {
+			t.Errorf("the recipe does not say %q:\n%s", w, got)
+		}
+	}
+
+	// ORDER, both ends. A fast-forward named after the loop is a fast-forward
+	// the seat reaches with its replay already committed on the stale base —
+	// where git refuses it — and an ancestry check named before the loop
+	// measures the base against a HEAD that has not replayed anything yet,
+	// which is exit 0 for every stale seat there has ever been.
+	ff := strings.Index(got, "\n  git merge --ff-only main\n")
+	walk := strings.Index(got, "git rev-list --reverse main.."+sha)
+	keys := strings.Index(got, "main..HEAD | sort)")
+	anc := strings.Index(got, "\n  git merge-base --is-ancestor main HEAD")
+	if !(ff < walk) {
+		t.Errorf("the fast-forward (%d) is not named before the walk over the originals (%d):\n%s", ff, walk, got)
+	}
+	if !(keys < anc) {
+		t.Errorf("the ancestry check (%d) is not the last thing asked — the key read-back is at %d:\n%s", anc, keys, got)
+	}
+
+	// And the arm with no operands: it can give no loop, but "your HEAD is
+	// your launch base" is a fact about every dispatched seat and not about
+	// this filing's sha, so it carries the rule and the same one command.
+	none := mergeBlockedReplay("main", "", 2)
+	for _, w := range []string{"YOUR HEAD IS YOUR LAUNCH BASE", "git merge --ff-only main"} {
+		if !strings.Contains(none, w) {
+			t.Errorf("a filing with no head drops %q:\n%s", w, none)
+		}
 	}
 }
 

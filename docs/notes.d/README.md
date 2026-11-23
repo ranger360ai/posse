@@ -11,6 +11,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-q5fee](ranger-base-q5fee.md) — ranger-base-q5fee — the other two ladders, and a §2 verb nothing called — 2026-11-23
 - [ranger-base-p51zu](ranger-base-p51zu.md) — ranger-base-p51zu — a seat with no work prompt is a fact the records already held — 2026-11-23
 - [ranger-base-hcig1](ranger-base-hcig1.md) — ranger-base-hcig1 — the settle window's two exits, and what the illegible one cost — 2026-11-23
+- [ranger-base-ghtov](ranger-base-ghtov.md) — ranger-base-ghtov — the replay recipe read a stale HEAD, so a faithful replay landed nowhere — 2026-11-23
 - [ranger-base-25otk](ranger-base-25otk.md) — ranger-base-25otk — the settle gate was handed its own evidence and dropped it — 2026-11-23
 - [ranger-base-zlvyk](ranger-base-zlvyk.md) — A park leaves the held commits on every branch already cut from that tip (ranger-base-zlvyk) — 2026-11-22
 - [ranger-base-x5zmk](ranger-base-x5zmk.md) — Four unwitnessed arms of the bounded suite queue, and the one that re-admitted the symptom (ranger-base-x5zmk) — 2026-11-22
