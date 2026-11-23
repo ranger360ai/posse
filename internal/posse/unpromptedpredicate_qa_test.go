@@ -41,6 +41,26 @@ package posse
 // Neither copy is wrong and neither should go: the walk's is a cost guard
 // with a stated reason, and the predicate's exclusions are what make it safe
 // for a second caller.
+//
+// ─── AND THE PREDICATE PIN IS THE MERGE OF TWO (ranger-base-zpagn F7) ───────
+//
+// govern_test.go carried `TestGovG19ThePredicateItselfExcludesEachPopulation`
+// and `TestGovG19ThePredicateAbstainsOnARecordItCannotAge`
+// (ranger-base-56gd0), landed 25 minutes before this file in the same
+// lineage and making the same claim about the same predicate. MEASURED
+// 2026-11-23, M3 again — unpromptedSeat's own `case s.Foreign, s.Crew:` and
+// `case s.Bead == "":` arms deleted, 14 lines — RED on BOTH copies, with the
+// four older ShopCheck G19 pins green beside them. Two pins over one claim
+// with neither naming the other is the drift this house counts, so there is
+// one, and it is this one: the other two were forced SERIAL by reading the
+// written package var `govNow` (their own comments say so) and sat in an
+// UNTAGGED file, so one claim about a pure predicate was graded three times
+// per `make test`, once per arm.
+//
+// It carries the arms they had that this one did not: an excluded seat raises
+// NOTHING rather than a blank row (unpromptedRaisesNothing, below — a claim
+// about the walk, which hands whatever comes back to `add`), and a record
+// with no launch clock to AGE is an abstention of its own.
 
 import (
 	"os"
@@ -117,38 +137,79 @@ func TestGovG19PredicateAloneExcludesTheThreePopulations(t *testing.T) {
 			sess := base
 			arm.mut(&sess)
 			s, m := unpromptedRow(sess, launched, time.Time{})
-			if c, yes := unpromptedSeat(s, m, now); yes {
+			c, yes := unpromptedSeat(s, m, now)
+			if yes {
 				t.Errorf("unpromptedSeat raises G19 over a %s seat: %s.\n"+
 					"The exclusion is in the predicate as well as in govern.go's walk ON PURPOSE — it "+
 					"is what makes the predicate safe for a second caller, and the docstring's claim "+
 					"that it 'is the predicate alone, which is what makes it the same answer twice' "+
 					"is this test (ranger-base-nqtz5 F2, mutant M3). Row: %+v",
 					arm.name, arm.why, c)
+				return
 			}
+			unpromptedRaisesNothing(t, c)
 		})
 	}
 
-	// The two exclusions that are NOT about population — kept here beside
-	// them because the predicate's answer is one switch and a reordering
-	// that broke these would otherwise be graded only through ShopCheck.
+	// The exclusions that are NOT about population — kept here beside them
+	// because the predicate's answer is one switch and a reordering that
+	// broke these would otherwise be graded only through ShopCheck.
 	t.Run("a record with the stamp", func(t *testing.T) {
 		s, m := unpromptedRow(base, launched, launched.Add(time.Minute))
-		if c, yes := unpromptedSeat(s, m, now); yes {
+		c, yes := unpromptedSeat(s, m, now)
+		if yes {
 			t.Errorf("a seat whose record carries prompted: raises G19 — any launcher's prompt counts, "+
 				"the hand `posse prompt` included (ADR 0011 §3): %+v", c)
+			return
 		}
+		unpromptedRaisesNothing(t, c)
 	})
 	t.Run("no record", func(t *testing.T) {
-		if c, yes := unpromptedSeat(base, nil, now); yes {
+		c, yes := unpromptedSeat(base, nil, now)
+		if yes {
 			t.Errorf("a session with no readable record raises G19 — `prompted:` absent and the whole "+
 				"record absent are not the same claim (ranger-base-82e40): %+v", c)
+		} else {
+			unpromptedRaisesNothing(t, c)
 		}
 		s, m := unpromptedRow(base, launched, time.Time{})
 		m.Unreadable = true
-		if c, yes := unpromptedSeat(s, m, now); yes {
+		c, yes = unpromptedSeat(s, m, now)
+		if yes {
 			t.Errorf("an unreadable record raises G19: %+v", c)
+			return
 		}
+		unpromptedRaisesNothing(t, c)
 	})
+	// A RECORD WITH NO LAUNCH CLOCK TO AGE, the retired copy's third
+	// abstention (see the merge note in this file's head comment): the
+	// predicate's condition is an AGE, so a record whose `launched:` is the
+	// zero time is one it cannot date — and `now.Sub(zero)` is tens of
+	// thousands of hours, which is past every grace there will ever be. This
+	// is the arm that says the abstention is deliberate and not arithmetic.
+	t.Run("a record with no launch stamp", func(t *testing.T) {
+		c, yes := unpromptedSeat(base, &HerdrMeta{Name: base.Name}, now)
+		if yes {
+			t.Errorf("a record with no launch stamp raises G19 — the condition is the AGE of a launch "+
+				"and there is no launch here to age, so this is the zero time read as 50 years past the "+
+				"grace (unprompted.go's own abstention): %+v", c)
+			return
+		}
+		unpromptedRaisesNothing(t, c)
+	})
+}
+
+// unpromptedRaisesNothing is the retired copy's own arm, kept because it is a
+// claim about the WALK and not about the predicate's bool: ShopCheck hands
+// whatever comes back to `add`, so an excluded seat that still carries a row
+// is a blank G19 on the shop set rather than no G19 at all. The bool and the
+// row are two returns and only one of them was ever asserted here.
+func unpromptedRaisesNothing(t *testing.T, c GovCondition) {
+	t.Helper()
+	if c != (GovCondition{}) {
+		t.Errorf("excluded and still carrying a row: %+v — ShopCheck's walk hands whatever comes back "+
+			"to `add`, so a non-zero condition beside a false answer is a blank row on the shop set", c)
+	}
 }
 
 // ─── the stamp the hand path writes, read by both readers (F1's other half) ──

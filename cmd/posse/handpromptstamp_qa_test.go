@@ -29,6 +29,31 @@ package main
 // The fixture is promptsubmit_qa_test.go's fake herdr, plus the one record
 // state no launch leaves behind on purpose — `bead:` set, `launched:` old,
 // `prompted:` absent, which is G19's own row.
+//
+// ─── AND IT IS THE MERGE OF TWO COPIES (ranger-base-zpagn F7) ───────────────
+//
+// `cmd/posse/promptstamp_qa_test.go` (ranger-base-56gd0, 113 lines) pinned
+// this same write, and landed 25 minutes before this file in the same
+// lineage. MEASURED 2026-11-23, `hb.MarkPrompted(name, time.Now())` deleted
+// from `case "prompt"`: RED on both, every arm of both. Neither copy was
+// wrong and the suite cost was 8s for three pins — what made it a finding is
+// that two pins stood over one claim with neither naming the other, so the
+// next bead to edit either had no way to know the other existed and a reader
+// who found both could not tell which was live.
+//
+// So there is one, and it carries the arms the retired copy had that this one
+// did not: the fixture is asserted STAMPLESS before the verb runs (the state
+// the measured incident's seat was in, and without it the arm below passes
+// with the write deleted), and the whole record is checked for the fields a
+// read-modify-write has to preserve, not the bead pointer alone. What this
+// file keeps that the other had not: the record in G19's own state rather
+// than a bare launch, the launch-relation arm, and the wrong arm below.
+//
+// The one distinction the retired copy drew and this one does not is `prompted:`
+// present with an empty value against the key absent. It is resolved rather
+// than dropped: parseLaunched reads either as the zero time, so they are the
+// same answer to every reader of the record, and the reader below returns ""
+// for both and says so.
 
 import (
 	"os"
@@ -93,6 +118,14 @@ func handPromptStamp(t *testing.T, home string) string {
 // that this seat got its work.
 func TestQAHandPromptStampsThePromptedFieldOnTheRecord(t *testing.T) {
 	home, herdr, launched := handPromptRig(t, "❯\\n")
+
+	// THE PREMISE, ASSERTED (the retired copy's arm): a fixture that already
+	// carried a stamp would make every assertion below pass with the write
+	// deleted. Stampless is also the state the measured seat was in.
+	if stamp := handPromptStamp(t, home); stamp != "" {
+		t.Fatalf("the fixture already carries prompted: %q — this pin's premise is a record with none", stamp)
+	}
+
 	before := time.Now().UTC().Truncate(time.Second)
 	out := runPrompt(t, home, herdr)
 	after := time.Now().UTC()
@@ -130,16 +163,30 @@ func TestQAHandPromptStampsThePromptedFieldOnTheRecord(t *testing.T) {
 		t.Errorf("prompted: %s is outside the window this command ran in (%s..%s) — the stamp is not "+
 			"this prompt's", at.Format(time.RFC3339), before.Format(time.RFC3339), after.Format(time.RFC3339))
 	}
-	// The bead pointer is untouched. Both halves of the record are read as
-	// one pair by G19 — `bead:` set with no `prompted:` under it — so a write
-	// that landed the stamp by clearing the pointer would stand the condition
-	// down for the wrong reason.
+	// The record is not otherwise rewritten. The bead pointer first and by
+	// name, because both halves of the record are read as one pair by G19 —
+	// `bead:` set with no `prompted:` under it — so a write that landed the
+	// stamp by clearing the pointer would stand the condition down for the
+	// wrong reason. Then the rest of the fixture's own fields, which is the
+	// retired copy's arm: this is a read-modify-write at a call site holding
+	// no launcher lock, which is the risk ranger-base-p51zu's close accepted
+	// out loud, and a rewrite that dropped a field would read as a seat with
+	// no persona or no pane.
 	body, err := os.ReadFile(filepath.Join(home, "state", "herdr", "fresh.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "bead: ranger-base-72z36") {
-		t.Errorf("the prompt lost the record's bead pointer:\n%s", body)
+	for _, want := range []string{
+		"bead: ranger-base-72z36",
+		"name: fresh",
+		"workspace: w1",
+		"pane: p1",
+		"agent: developer",
+		"launched: " + launched.Format(time.RFC3339),
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("the stamp write dropped %q from the record:\n%s", want, body)
+		}
 	}
 }
 
