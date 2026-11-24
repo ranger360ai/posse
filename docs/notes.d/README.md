@@ -112,6 +112,7 @@ names its bead id and nothing else (AGENTS.md, "Landing the plane").
 - [ranger-base-legou](ranger-base-legou.md) — The host's opens of the refusals trail go through no link (ranger-base-legou) — 2026-11-21
 - [ranger-base-jyqk4](ranger-base-jyqk4.md) — Four macos-only red families, and the one thing all four have in common (ranger-base-jyqk4) — 2026-11-21
 - [ranger-base-is1qp](ranger-base-is1qp.md) — The dispatch loops on this binary (ranger-base-is1qp) — 2026-11-21
+- [ranger-base-i9fq8](ranger-base-i9fq8.md) — The first install that adds a G-row rolls back, and the verb is right to be suspicious (ranger-base-i9fq8) — 2026-11-21
 - [ranger-base-i36bf](ranger-base-i36bf.md) — A rendered shim is a shell script nothing ever asked to parse (ranger-base-i36bf) — 2026-11-21
 - [ranger-base-hkp3s](ranger-base-hkp3s.md) — ranger-base-hkp3s — the shared checkout gets no L1 wall for destruction, and the house stops prescribing it — 2026-11-21
 - [ranger-base-gi22r](ranger-base-gi22r.md) — ranger-base-gi22r — shape 1's grants and pins walk their components instead of stat'ing them — 2026-11-21
